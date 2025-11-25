@@ -1,7 +1,6 @@
 "use client";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 import { TrashIcon } from "lucide-react";
-// import TimeAgo from "react-timeago";
 import { useRouter } from "next/navigation";
 import { Button } from "../components/ui/button";
 import { use } from "react";
@@ -18,9 +17,9 @@ function ChatRow({
 }) {
   const router = useRouter();
   const { closeMobileNav } = use(NavigationContext);
-  //   const lastMessage = useQuery(api.messages.getLastMessage, {
-  //     chatId: chat._id
-  //   });
+  const lastMessage = useQuery(api.messages.getLastMessage, {
+    chatId: chat._id
+  });
 
   const handleClick = () => {
     router.push(`/dashboard/chat/${chat._id}`);
@@ -35,15 +34,15 @@ function ChatRow({
       <div className="p-4">
         <div className="flex justify-between items-start">
           <p className="text-sm text-gray-600 truncate flex-1 font-medium">
-            chat
-            {/* {lastMessage ? (
+            {lastMessage ? (
               <>
                 {lastMessage.role === "user" ? "You: " : "AI: "}
-                {lastMessage.content.replace(/\\n/g, "\n")}
+                {lastMessage.content.slice(0, 50).replace(/\\n/g, " ")}
+                {lastMessage.content.length > 50 ? "..." : ""}
               </>
             ) : (
               <span className="text-gray-400">New conversation</span>
-            )} */}
+            )}
           </p>
           <Button
             variant="ghost"

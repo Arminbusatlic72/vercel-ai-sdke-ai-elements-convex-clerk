@@ -4,11 +4,17 @@ import { api } from "@/convex/_generated/api";
 import { getConvexClient } from "@/lib/convex";
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
+import AiChat from "@/components/AiChat";
 
 interface ChatPageProps {
   params: {
     chatId: Id<"chats">;
   };
+  initialMessages: Array<{
+    _id: Id<"messages">;
+    content: string;
+    role: "user" | "assistant";
+  }>;
 }
 
 export default async function ChatPage({ params }: ChatPageProps) {
@@ -38,14 +44,12 @@ export default async function ChatPage({ params }: ChatPageProps) {
       redirect("/dashboard");
     }
 
-    // Get messages
+    // Get initial messages
     const initialMessages = await convex.query(api.messages.list, { chatId });
-    console.log("Initial messages:", initialMessages);
 
     return (
-      <div className="flex-1 overflow-hidden">
-        Chat page Id: {chatId}
-        {/* <ChatInterface chatId={chatId} initialMessages={initialMessages} /> */}
+      <div className="w-full h-screen">
+        <AiChat chatId={chatId} initialMessages={initialMessages} />
       </div>
     );
   } catch (error) {
