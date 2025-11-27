@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useChat } from "@ai-sdk/react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -23,11 +23,27 @@ import {
 import {
   PromptInput,
   PromptInputTextarea,
-  PromptInputSubmit
+  PromptInputSubmit,
+  PromptInputActionAddAttachments,
+  PromptInputActionMenu,
+  PromptInputActionMenuContent,
+  PromptInputActionMenuTrigger,
+  PromptInputAttachment,
+  PromptInputAttachments,
+  PromptInputBody,
+  PromptInputButton,
+  PromptInputHeader,
+  PromptInputSelect,
+  PromptInputSelectContent,
+  PromptInputSelectItem,
+  PromptInputSelectTrigger,
+  PromptInputSelectValue,
+  PromptInputFooter,
+  PromptInputTools
 } from "@/components/ai-elements/prompt-input";
 
 import { Loader } from "@/components/ai-elements/loader";
-import { CopyIcon, RefreshCcwIcon } from "lucide-react";
+import { CopyIcon, RefreshCcwIcon, GlobeIcon } from "lucide-react";
 
 const models = [
   { name: "Gemini 2.5 Flash", value: "gemini-2.5-flash" },
@@ -43,43 +59,46 @@ export interface AiChatProps {
   }>;
 }
 
-// Helper to extract text from message parts
-const extractMessageText = (parts: any[]): string => {
-  return parts
+const extractMessageText = (parts: any[]): string =>
+  parts
     .filter((p) => p.type === "text")
     .map((p) => p.text)
     .join("\n")
     .trim();
-};
 
 export default function AiChat({
   chatId: initialChatId,
   initialMessages = []
 }: AiChatProps) {
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [chatId, setChatId] = useState<Id<"chats"> | undefined>(initialChatId);
   const [input, setInput] = useState("");
-  const [model] = useState(models[0].value);
+  const [model, setModel] = useState<string>(models[0].value);
+  const [webSearch, setWebSearch] = useState(false);
 
   const { messages, sendMessage, status, regenerate } = useChat();
   const createChat = useMutation(api.chats.createChat);
   const storeMessage = useMutation(api.messages.storeMessage);
 
-  // Track messages already stored to avoid duplicates
   const savedMessageKeys = useRef(new Set<string>());
   const isSavingRef = useRef(false);
   const isInitialized = useRef(false);
 
-  // Initialize saved keys once
+  // Focus input on mount and when chatId changes
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [chatId]);
+
+  // Initialize saved message keys once
   useEffect(() => {
     if (isInitialized.current) return;
     isInitialized.current = true;
-
     initialMessages.forEach((m) => {
       savedMessageKeys.current.add(`${m.role}-${m.content.trim()}`);
     });
   }, [initialMessages]);
 
-  // Save new messages
+  // Save new messages to database
   useEffect(() => {
     if (!messages.length || isSavingRef.current) return;
 
@@ -96,11 +115,10 @@ export default function AiChat({
 
           let activeChatId = chatId;
 
-          // Create chat on first user message if needed
           if (!activeChatId && msg.role === "user") {
             try {
               activeChatId = await createChat({
-                title: fullText.slice(0, 100) // Limit title length
+                title: fullText.slice(0, 100)
               });
               setChatId(activeChatId);
             } catch (err) {
@@ -117,7 +135,6 @@ export default function AiChat({
               content: fullText,
               role: msg.role as "user" | "assistant"
             });
-
             savedMessageKeys.current.add(key);
           } catch (err) {
             console.error("Failed to store message:", err);
@@ -131,98 +148,159 @@ export default function AiChat({
     saveMessages();
   }, [messages, chatId, createChat, storeMessage]);
 
-  // Memoize submit handler
   const handleSubmit = useCallback(
     (msg: { text: string; files?: any[] }) => {
       if (!msg.text && !msg.files?.length) return;
 
       sendMessage(
         { text: msg.text, files: msg.files },
-        { body: { chatId, model } }
+        { body: { chatId, model, webSearch } }
       );
       setInput("");
     },
-    [sendMessage, chatId, model]
+    [sendMessage, chatId, model, webSearch]
   );
 
-  // Memoize copy handler
   const handleCopy = useCallback((text: string) => {
     navigator.clipboard.writeText(text);
   }, []);
 
-  // Filter new messages (memoized calculation)
-  const displayMessages = messages.filter((message) => {
-    const fullText = extractMessageText(message.parts);
-    if (!fullText) return false;
+  const toggleWebSearch = useCallback(() => {
+    setWebSearch((prev) => !prev);
+  }, []);
 
-    return !initialMessages.some(
-      (m) => m.role === message.role && m.content.trim() === fullText
-    );
-  });
+  // Memoize filtered messages to avoid recalculating on every render
+  const displayMessages = useMemo(() => {
+    return messages.filter((message) => {
+      const fullText = extractMessageText(message.parts);
+      if (!fullText) return false;
+      return !initialMessages.some(
+        (m) => m.role === message.role && m.content.trim() === fullText
+      );
+    });
+  }, [messages, initialMessages]);
+
+  // Memoize attachment renderer
+  const renderAttachment = useCallback(
+    (attachment: any) => <PromptInputAttachment data={attachment} />,
+    []
+  );
 
   return (
-    <div className="max-w-4xl mx-auto p-6 relative size-full h-screen">
-      <div className="flex flex-col h-full">
-        <div className="flex-1 overflow-y-auto p-4">
-          <Conversation className="h-full">
-            <ConversationContent>
-              {/* Initial messages */}
-              {initialMessages.map((m) => (
-                <Message key={m._id} from={m.role}>
+    <div className="flex flex-col h-full w-full">
+      <div className="flex-1 overflow-y-auto px-6">
+        <Conversation className="flex flex-col h-full w-full">
+          <ConversationContent>
+            {initialMessages.map((m) => (
+              <Message key={m._id} from={m.role}>
+                <MessageContent>
+                  <MessageResponse>{m.content}</MessageResponse>
+                </MessageContent>
+              </Message>
+            ))}
+
+            {displayMessages.map((message) => {
+              const fullText = extractMessageText(message.parts);
+              if (!fullText) return null;
+              return (
+                <Message key={message.id} from={message.role}>
                   <MessageContent>
-                    <MessageResponse>{m.content}</MessageResponse>
+                    <MessageResponse>{fullText}</MessageResponse>
                   </MessageContent>
+                  {message.role === "assistant" && (
+                    <MessageActions>
+                      <MessageAction
+                        onClick={() => {
+                          const lastUserMessage = messages
+                            .slice()
+                            .reverse()
+                            .find((msg) => msg.role === "user");
+
+                          if (lastUserMessage) {
+                            sendMessage(
+                              {
+                                text: extractMessageText(lastUserMessage.parts)
+                              },
+                              { body: { chatId, model } }
+                            );
+                          }
+                        }}
+                        label="Retry"
+                      >
+                        <RefreshCcwIcon className="size-3" />
+                      </MessageAction>
+                      <MessageAction
+                        onClick={() => handleCopy(fullText)}
+                        label="Copy"
+                      >
+                        <CopyIcon className="size-3" />
+                      </MessageAction>
+                    </MessageActions>
+                  )}
                 </Message>
-              ))}
+              );
+            })}
 
-              {/* New messages */}
-              {displayMessages.map((message) => {
-                const fullText = extractMessageText(message.parts);
-                if (!fullText) return null;
+            {status === "submitted" && <Loader />}
+          </ConversationContent>
 
-                return (
-                  <Message key={message.id} from={message.role}>
-                    <MessageContent>
-                      <MessageResponse>{fullText}</MessageResponse>
-                    </MessageContent>
-
-                    {message.role === "assistant" && (
-                      <MessageActions>
-                        <MessageAction onClick={regenerate} label="Retry">
-                          <RefreshCcwIcon className="size-3" />
-                        </MessageAction>
-                        <MessageAction
-                          onClick={() => handleCopy(fullText)}
-                          label="Copy"
-                        >
-                          <CopyIcon className="size-3" />
-                        </MessageAction>
-                      </MessageActions>
-                    )}
-                  </Message>
-                );
-              })}
-
-              {status === "submitted" && <Loader />}
-            </ConversationContent>
-
-            <ConversationScrollButton />
-          </Conversation>
-        </div>
+          <ConversationScrollButton />
+        </Conversation>
       </div>
 
-      <div className="max-w-4xl mx-auto w-full p-6">
-        <PromptInput onSubmit={handleSubmit}>
-          <PromptInputTextarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your message…"
-          />
-          <PromptInputSubmit
-            disabled={!input && status !== "streaming"}
-            status={status}
-          />
-        </PromptInput>
+      <div className="border-t bg-white py-4 px-6">
+        <div className="max-w-4xl mx-auto">
+          <PromptInput
+            onSubmit={handleSubmit}
+            className="mt-4"
+            globalDrop
+            multiple
+          >
+            <PromptInputHeader>
+              <PromptInputAttachments>
+                {renderAttachment}
+              </PromptInputAttachments>
+            </PromptInputHeader>
+            <PromptInputBody>
+              <PromptInputTextarea
+                onChange={(e) => setInput(e.target.value)}
+                value={input}
+                ref={inputRef}
+                placeholder="Type your message here..."
+              />
+            </PromptInputBody>
+            <PromptInputFooter>
+              <PromptInputTools>
+                <PromptInputActionMenu>
+                  <PromptInputActionMenuTrigger />
+                  <PromptInputActionMenuContent>
+                    <PromptInputActionAddAttachments />
+                  </PromptInputActionMenuContent>
+                </PromptInputActionMenu>
+                <PromptInputButton
+                  variant={webSearch ? "default" : "ghost"}
+                  onClick={toggleWebSearch}
+                >
+                  <GlobeIcon size={16} />
+                  <span>Search</span>
+                </PromptInputButton>
+                <PromptInputSelect onValueChange={setModel} value={model}>
+                  <PromptInputSelectTrigger>
+                    <PromptInputSelectValue />
+                  </PromptInputSelectTrigger>
+                  <PromptInputSelectContent>
+                    {models.map((m) => (
+                      <PromptInputSelectItem key={m.value} value={m.value}>
+                        {m.name}
+                      </PromptInputSelectItem>
+                    ))}
+                  </PromptInputSelectContent>
+                </PromptInputSelect>
+              </PromptInputTools>
+              <PromptInputSubmit disabled={!input && !status} status={status} />
+            </PromptInputFooter>
+          </PromptInput>
+        </div>
       </div>
     </div>
   );

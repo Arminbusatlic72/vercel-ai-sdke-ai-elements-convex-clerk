@@ -1,8 +1,9 @@
 import AiChat from "@/components/AiChat";
+
 export default function ChatPage() {
   return (
-    <main className="min-h-screen bg-white flex items-center justify-center p-4">
+    <div className="h-full w-full p-4 bg-white">
       <AiChat />
-    </main>
+    </div>
   );
 }
