@@ -6,6 +6,7 @@ import Header from "@/components/Header";
 import Sidebar from "@/components/SideBar";
 import { NavigationProvider } from "@/lib/NavigationProvider";
 import { api } from "@/convex/_generated/api";
+
 export default function DashboardLayout({
   children
 }: {
@@ -21,7 +22,7 @@ export default function DashboardLayout({
             deleteChatApi={api.chats.deleteChat}
             storeMessageApi={api.messages.storeMessage}
             updateChatTitleApi={api.chats.updateChatTitle}
-            basePath="/dashboard/chat"
+            basePath="/gpt5/chat"
           />
         </Authenticated>
 

@@ -11,7 +11,7 @@ export const createChat = mutation({
       throw new Error("Not authenticated");
     }
 
-    const chat = await ctx.db.insert("chats", {
+    const chat = await ctx.db.insert("agent2Chats", {
       title: args.title,
       userId: identity.subject,
       createdAt: Date.now()
@@ -29,7 +29,7 @@ export const listChats = query({
     }
 
     const chats = await ctx.db
-      .query("chats")
+      .query("agent2Chats")
       .withIndex("by_user", (q) => q.eq("userId", identity.subject))
       .order("desc")
       .collect();
@@ -39,7 +39,7 @@ export const listChats = query({
 });
 
 export const deleteChat = mutation({
-  args: { id: v.id("chats") },
+  args: { id: v.id("agent2Chats") },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -53,7 +53,7 @@ export const deleteChat = mutation({
 
     // Delete all messages in the chat
     const messages = await ctx.db
-      .query("messages")
+      .query("agent2Messages")
       .withIndex("by_chat", (q) => q.eq("chatId", args.id))
       .collect();
 
@@ -63,40 +63,29 @@ export const deleteChat = mutation({
 
     // Delete the chat
     await ctx.db.delete(args.id);
-
-    // Return null for consistency (changed from void)
-    return null;
   }
 });
 
 export const getChat = query({
-  args: { id: v.id("chats"), userId: v.string() },
+  args: { id: v.id("agent2Chats"), userId: v.string() },
   handler: async (ctx, args) => {
     try {
       const chat = await ctx.db.get(args.id);
 
-      // Return null if chat doesn't exist or user is not authorized
       if (!chat || chat.userId !== args.userId) {
-        console.log("❌ Chat not found or unauthorized", {
-          chatExists: !!chat,
-          chatUserId: chat?.userId,
-          requestUserId: args.userId
-        });
         return null;
       }
 
-      console.log("✅ Chat found and authorized");
       return chat;
     } catch (error) {
-      console.error("🔥 Error in getChat:", error);
+      console.error("Error in getChat:", error);
       return null;
     }
   }
 });
-
 export const updateChatTitle = mutation({
   args: {
-    id: v.id("chats"),
+    id: v.id("agent2Chats"),
     title: v.string()
   },
   handler: async (ctx, args) => {

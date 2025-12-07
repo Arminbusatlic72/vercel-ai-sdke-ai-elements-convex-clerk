@@ -120,3 +120,24 @@
     @apply bg-background text-foreground;
   }
 }
+/* Apply this to the <pre> tag that contains your code */
+pre {
+  white-space: pre; /* Keep this to preserve formatting */
+  overflow-x: auto; /* Adds horizontal scrollbar if content overflows */
+  max-width: 100%; /* Ensures the pre tag doesn't exceed its parent's width */
+  box-sizing: border-box; /* Include padding/border in width calculation */
+}
+
+/* Optional: for better appearance within the code block itself */
+pre code {
+  display: block; /* Make sure code takes up full width for proper scrolling */
+  padding: 1em; /* Add some padding inside the code block */
+}
+
+/* If you're using a specific UI framework, you might target classes like: */
+/*
+.markdown-body pre {
+  overflow-x: auto;
+  max-width: 100%;
+}
+*/

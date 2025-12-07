@@ -1,24 +1,183 @@
+// "use client";
+
+// import { GlobeIcon } from "lucide-react";
+// import { Conversation } from "@/components/ai-elements/conversation";
+
+// import {
+//   PromptInput,
+//   PromptInputTextarea,
+//   PromptInputSubmit,
+//   PromptInputActionAddAttachments,
+//   PromptInputActionMenu,
+//   PromptInputActionMenuContent,
+//   PromptInputActionMenuTrigger,
+//   PromptInputAttachment,
+//   PromptInputAttachments,
+//   PromptInputBody,
+//   PromptInputButton,
+//   PromptInputHeader,
+//   PromptInputSelect,
+//   PromptInputSelectContent,
+//   PromptInputSelectItem,
+//   PromptInputSelectTrigger,
+//   PromptInputSelectValue,
+//   PromptInputFooter,
+//   PromptInputTools
+// } from "@/components/ai-elements/prompt-input";
+// import { useAiChat } from "@/lib/hooks/useAiChat"; // <-- your hook
+
+// import type { Id, TableNames } from "@/convex/_generated/dataModel";
+// import { AiMessageList } from "@/components/AiMessageList";
+// export interface ModelConfig {
+//   name: string;
+//   value: string;
+//   provider: string;
+// }
+
+// export interface AiChatProps<
+//   ChatTableName extends TableNames,
+//   MessageTableName extends TableNames
+// > {
+//   chatId: Id<ChatTableName>;
+//   initialMessages?: Array<{
+//     _id: Id<MessageTableName>;
+//     role: "user" | "assistant";
+//     content: string;
+//   }>;
+//   models: readonly ModelConfig[];
+//   apiEndpoint?: string;
+//   showWebSearch?: boolean;
+//   defaultModel?: string;
+//   createChatApi: any;
+//   storeMessageApi: any;
+//   updateChatTitleApi?: any;
+// }
+
+// export default function AiChat<
+//   ChatTableName extends TableNames,
+//   MessageTableName extends TableNames
+// >(props: AiChatProps<ChatTableName, MessageTableName>) {
+//   const {
+//     chatId,
+//     input,
+//     setInput,
+//     model,
+//     setModel,
+//     webSearch,
+//     toggleWebSearch,
+//     handleSubmit,
+//     handleCopy,
+//     handleRetry,
+//     displayMessages,
+//     groupedModels,
+//     inputRef,
+//     conversationRef,
+//     messages,
+//     status
+//   } = useAiChat(props);
+
+//   const renderAttachment = (attachment: any) => (
+//     <PromptInputAttachment data={attachment} />
+//   );
+
+//   return (
+//     <div className="flex flex-col h-full overflow-hidden">
+//       <div
+//         ref={conversationRef}
+//         className="flex-1 overflow-y-auto overflow-x-hidden min-h-0"
+//       >
+//         <Conversation>
+//           <AiMessageList
+//             initialMessages={props.initialMessages}
+//             displayMessages={displayMessages}
+//             handleCopy={handleCopy}
+//             handleRetry={handleRetry}
+//             status={status}
+//           />
+//         </Conversation>
+//       </div>
+
+//       <div className="border-t bg-white/80 backdrop-blur-sm py-4 px-4 sm:px-6 shrink-0">
+//         <div className="max-w-3xl mx-auto w-full">
+//           <PromptInput
+//             onSubmit={handleSubmit}
+//             className="shadow-sm"
+//             globalDrop
+//             multiple
+//           >
+//             <PromptInputHeader>
+//               <PromptInputAttachments>
+//                 {renderAttachment}
+//               </PromptInputAttachments>
+//             </PromptInputHeader>
+//             <PromptInputBody>
+//               <PromptInputTextarea
+//                 value={input}
+//                 onChange={(e) => setInput(e.target.value)}
+//                 ref={inputRef}
+//                 placeholder="Type your message here..."
+//                 className="min-h-[60px] max-h-[200px] resize-none"
+//               />
+//             </PromptInputBody>
+//             <PromptInputFooter>
+//               <PromptInputTools>
+//                 <PromptInputActionMenu>
+//                   <PromptInputActionMenuTrigger />
+//                   <PromptInputActionMenuContent>
+//                     <PromptInputActionAddAttachments />
+//                   </PromptInputActionMenuContent>
+//                 </PromptInputActionMenu>
+
+//                 {props.showWebSearch && (
+//                   <PromptInputButton
+//                     variant={webSearch ? "default" : "ghost"}
+//                     onClick={toggleWebSearch}
+//                     className="gap-2"
+//                   >
+//                     <GlobeIcon size={16} />
+//                     <span>Search</span>
+//                   </PromptInputButton>
+//                 )}
+
+//                 <PromptInputSelect onValueChange={setModel} value={model}>
+//                   <PromptInputSelectTrigger>
+//                     <PromptInputSelectValue />
+//                   </PromptInputSelectTrigger>
+//                   <PromptInputSelectContent>
+//                     {Object.entries(groupedModels).map(
+//                       ([provider, providerModels]) => (
+//                         <div key={provider}>
+//                           <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase">
+//                             {provider}
+//                           </div>
+//                           {providerModels.map((m) => (
+//                             <PromptInputSelectItem
+//                               key={m.value}
+//                               value={m.value}
+//                             >
+//                               {m.name}
+//                             </PromptInputSelectItem>
+//                           ))}
+//                         </div>
+//                       )
+//                     )}
+//                   </PromptInputSelectContent>
+//                 </PromptInputSelect>
+//               </PromptInputTools>
+//               <PromptInputSubmit disabled={!input && !status} status={status} />
+//             </PromptInputFooter>
+//           </PromptInput>
+//         </div>
+//       </div>
+//     </div>
+//   );
+// }
+
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useChat } from "@ai-sdk/react";
-import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
-
-import {
-  Conversation,
-  ConversationContent,
-  ConversationScrollButton
-} from "@/components/ai-elements/conversation";
-
-import {
-  Message,
-  MessageContent,
-  MessageResponse,
-  MessageActions,
-  MessageAction
-} from "@/components/ai-elements/message";
+import { memo, useCallback } from "react";
+import { GlobeIcon } from "lucide-react";
+import { Conversation } from "@/components/ai-elements/conversation";
 
 import {
   PromptInput,
@@ -41,218 +200,100 @@ import {
   PromptInputFooter,
   PromptInputTools
 } from "@/components/ai-elements/prompt-input";
+import { useAiChat } from "@/lib/hooks/useAiChat";
+import { AiMessageList } from "@/components/AiMessageList";
 
-import { Loader } from "@/components/ai-elements/loader";
-import { CopyIcon, RefreshCcwIcon, GlobeIcon } from "lucide-react";
+import type { Id, TableNames } from "@/convex/_generated/dataModel";
 
-const models = [
-  { name: "Gemini 2.5 Flash", value: "gemini-2.5-flash" },
-  { name: "Gemini 2.0 Pro", value: "gemini-2.0-pro" }
-] as const;
+export interface ModelConfig {
+  name: string;
+  value: string;
+  provider: string;
+}
 
-export interface AiChatProps {
-  chatId?: Id<"chats">;
+export interface AiChatProps<
+  ChatTableName extends TableNames,
+  MessageTableName extends TableNames
+> {
+  chatId: Id<ChatTableName>;
   initialMessages?: Array<{
-    _id: Id<"messages">;
+    _id: Id<MessageTableName>;
     role: "user" | "assistant";
     content: string;
   }>;
+  models: readonly ModelConfig[];
+  apiEndpoint?: string;
+  showWebSearch?: boolean;
+  defaultModel?: string;
+  createChatApi: any;
+  storeMessageApi: any;
+  updateChatTitleApi?: any;
 }
 
-const extractMessageText = (parts: any[]): string =>
-  parts
-    .filter((p) => p.type === "text")
-    .map((p) => p.text)
-    .join("\n")
-    .trim();
+// Memoized attachment renderer
+const AttachmentRenderer = memo(({ attachment }: { attachment: any }) => (
+  <PromptInputAttachment data={attachment} />
+));
 
-export default function AiChat({
-  chatId: initialChatId,
-  initialMessages = []
-}: AiChatProps) {
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const [chatId, setChatId] = useState<Id<"chats"> | undefined>(initialChatId);
-  const [input, setInput] = useState("");
-  const [model, setModel] = useState<string>(models[0].value);
-  const [webSearch, setWebSearch] = useState(false);
+AttachmentRenderer.displayName = "AttachmentRenderer";
 
-  const { messages, sendMessage, status, regenerate } = useChat();
-  const createChat = useMutation(api.chats.createChat);
-  const storeMessage = useMutation(api.messages.storeMessage);
+function AiChat<
+  ChatTableName extends TableNames,
+  MessageTableName extends TableNames
+>(props: AiChatProps<ChatTableName, MessageTableName>) {
+  const {
+    input,
+    setInput,
+    model,
+    setModel,
+    webSearch,
+    toggleWebSearch,
+    handleSubmit,
+    handleCopy,
+    handleRetry,
+    displayMessages,
+    groupedModels,
+    inputRef,
+    conversationRef,
+    status
+  } = useAiChat(props);
 
-  const savedMessageKeys = useRef(new Set<string>());
-  const isSavingRef = useRef(false);
-  const isInitialized = useRef(false);
-
-  // Focus input on mount and when chatId changes
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, [chatId]);
-
-  // Initialize saved message keys once
-  useEffect(() => {
-    if (isInitialized.current) return;
-    isInitialized.current = true;
-    initialMessages.forEach((m) => {
-      savedMessageKeys.current.add(`${m.role}-${m.content.trim()}`);
-    });
-  }, [initialMessages]);
-
-  // Save new messages to database
-  useEffect(() => {
-    if (!messages.length || isSavingRef.current) return;
-
-    const saveMessages = async () => {
-      isSavingRef.current = true;
-
-      try {
-        for (const msg of messages) {
-          const fullText = extractMessageText(msg.parts);
-          if (!fullText) continue;
-
-          const key = `${msg.role}-${fullText}`;
-          if (savedMessageKeys.current.has(key)) continue;
-
-          let activeChatId = chatId;
-
-          if (!activeChatId && msg.role === "user") {
-            try {
-              activeChatId = await createChat({
-                title: fullText.slice(0, 100)
-              });
-              setChatId(activeChatId);
-            } catch (err) {
-              console.error("Failed to create chat:", err);
-              continue;
-            }
-          }
-
-          if (!activeChatId) continue;
-
-          try {
-            await storeMessage({
-              chatId: activeChatId,
-              content: fullText,
-              role: msg.role as "user" | "assistant"
-            });
-            savedMessageKeys.current.add(key);
-          } catch (err) {
-            console.error("Failed to store message:", err);
-          }
-        }
-      } finally {
-        isSavingRef.current = false;
-      }
-    };
-
-    saveMessages();
-  }, [messages, chatId, createChat, storeMessage]);
-
-  const handleSubmit = useCallback(
-    (msg: { text: string; files?: any[] }) => {
-      if (!msg.text && !msg.files?.length) return;
-
-      sendMessage(
-        { text: msg.text, files: msg.files },
-        { body: { chatId, model, webSearch } }
-      );
-      setInput("");
+  // Memoize input change handler
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setInput(e.target.value);
     },
-    [sendMessage, chatId, model, webSearch]
+    [setInput]
   );
 
-  const handleCopy = useCallback((text: string) => {
-    navigator.clipboard.writeText(text);
-  }, []);
-
-  const toggleWebSearch = useCallback(() => {
-    setWebSearch((prev) => !prev);
-  }, []);
-
-  // Memoize filtered messages to avoid recalculating on every render
-  const displayMessages = useMemo(() => {
-    return messages.filter((message) => {
-      const fullText = extractMessageText(message.parts);
-      if (!fullText) return false;
-      return !initialMessages.some(
-        (m) => m.role === message.role && m.content.trim() === fullText
-      );
-    });
-  }, [messages, initialMessages]);
-
-  // Memoize attachment renderer
+  // Render attachment callback
   const renderAttachment = useCallback(
-    (attachment: any) => <PromptInputAttachment data={attachment} />,
+    (attachment: any) => <AttachmentRenderer attachment={attachment} />,
     []
   );
 
   return (
-    <div className="flex flex-col h-full w-full">
-      <div className="flex-1 overflow-y-auto px-6">
-        <Conversation className="flex flex-col h-full w-full">
-          <ConversationContent>
-            {initialMessages.map((m) => (
-              <Message key={m._id} from={m.role}>
-                <MessageContent>
-                  <MessageResponse>{m.content}</MessageResponse>
-                </MessageContent>
-              </Message>
-            ))}
-
-            {displayMessages.map((message) => {
-              const fullText = extractMessageText(message.parts);
-              if (!fullText) return null;
-              return (
-                <Message key={message.id} from={message.role}>
-                  <MessageContent>
-                    <MessageResponse>{fullText}</MessageResponse>
-                  </MessageContent>
-                  {message.role === "assistant" && (
-                    <MessageActions>
-                      <MessageAction
-                        onClick={() => {
-                          const lastUserMessage = messages
-                            .slice()
-                            .reverse()
-                            .find((msg) => msg.role === "user");
-
-                          if (lastUserMessage) {
-                            sendMessage(
-                              {
-                                text: extractMessageText(lastUserMessage.parts)
-                              },
-                              { body: { chatId, model } }
-                            );
-                          }
-                        }}
-                        label="Retry"
-                      >
-                        <RefreshCcwIcon className="size-3" />
-                      </MessageAction>
-                      <MessageAction
-                        onClick={() => handleCopy(fullText)}
-                        label="Copy"
-                      >
-                        <CopyIcon className="size-3" />
-                      </MessageAction>
-                    </MessageActions>
-                  )}
-                </Message>
-              );
-            })}
-
-            {status === "submitted" && <Loader />}
-          </ConversationContent>
-
-          <ConversationScrollButton />
+    <div className="flex flex-col h-full overflow-hidden">
+      <div
+        ref={conversationRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden min-h-0"
+      >
+        <Conversation>
+          <AiMessageList
+            initialMessages={props.initialMessages}
+            displayMessages={displayMessages}
+            handleCopy={handleCopy}
+            handleRetry={handleRetry}
+            status={status}
+          />
         </Conversation>
       </div>
 
-      <div className="border-t bg-white py-4 px-6">
-        <div className="max-w-4xl mx-auto">
+      <div className="border-t bg-white/80 backdrop-blur-sm py-4 px-4 sm:px-6 shrink-0">
+        <div className="max-w-3xl mx-auto w-full">
           <PromptInput
             onSubmit={handleSubmit}
-            className="mt-4"
+            className="shadow-sm"
             globalDrop
             multiple
           >
@@ -263,10 +304,11 @@ export default function AiChat({
             </PromptInputHeader>
             <PromptInputBody>
               <PromptInputTextarea
-                onChange={(e) => setInput(e.target.value)}
                 value={input}
+                onChange={handleInputChange}
                 ref={inputRef}
                 placeholder="Type your message here..."
+                className="min-h-[60px] max-h-[200px] resize-none"
               />
             </PromptInputBody>
             <PromptInputFooter>
@@ -277,23 +319,40 @@ export default function AiChat({
                     <PromptInputActionAddAttachments />
                   </PromptInputActionMenuContent>
                 </PromptInputActionMenu>
-                <PromptInputButton
-                  variant={webSearch ? "default" : "ghost"}
-                  onClick={toggleWebSearch}
-                >
-                  <GlobeIcon size={16} />
-                  <span>Search</span>
-                </PromptInputButton>
+
+                {props.showWebSearch && (
+                  <PromptInputButton
+                    variant={webSearch ? "default" : "ghost"}
+                    onClick={toggleWebSearch}
+                    className="gap-2"
+                  >
+                    <GlobeIcon size={16} />
+                    <span>Search</span>
+                  </PromptInputButton>
+                )}
+
                 <PromptInputSelect onValueChange={setModel} value={model}>
                   <PromptInputSelectTrigger>
                     <PromptInputSelectValue />
                   </PromptInputSelectTrigger>
                   <PromptInputSelectContent>
-                    {models.map((m) => (
-                      <PromptInputSelectItem key={m.value} value={m.value}>
-                        {m.name}
-                      </PromptInputSelectItem>
-                    ))}
+                    {Object.entries(groupedModels).map(
+                      ([provider, providerModels]) => (
+                        <div key={provider}>
+                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase">
+                            {provider}
+                          </div>
+                          {providerModels.map((m) => (
+                            <PromptInputSelectItem
+                              key={m.value}
+                              value={m.value}
+                            >
+                              {m.name}
+                            </PromptInputSelectItem>
+                          ))}
+                        </div>
+                      )
+                    )}
                   </PromptInputSelectContent>
                 </PromptInputSelect>
               </PromptInputTools>
@@ -305,3 +364,6 @@ export default function AiChat({
     </div>
   );
 }
+
+// Export memoized version
+export default memo(AiChat) as typeof AiChat;
