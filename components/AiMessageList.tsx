@@ -135,7 +135,7 @@ export const AiMessageList = memo(function AiMessageList({
         ))}
 
         {showLoader && (
-          <div className="flex justify-center py-8 min-h-[80px]">
+          <div className="flex justify-center py-8 min-h-20">
             <Loader />
           </div>
         )}

@@ -1,99 +1,126 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
+// Create a chat inside a project
+// export const createChat = mutation({
+//   args: {
+//     title: v.string(),
+//     projectId: v.id("projects")
+//   },
+//   handler: async (ctx, args) => {
+//     const identity = await ctx.auth.getUserIdentity();
+//     if (!identity) throw new Error("Not authenticated");
+
+//     // Validate project ownership
+//     const project = await ctx.db.get(args.projectId);
+//     if (!project || project.userId !== identity.subject) {
+//       throw new Error("Unauthorized project access");
+//     }
+
+//     return await ctx.db.insert("chats", {
+//       title: args.title,
+//       userId: identity.subject,
+//       projectId: args.projectId,
+//       createdAt: Date.now()
+//     });
+//   }
+// });
+
 export const createChat = mutation({
   args: {
-    title: v.string()
+    title: v.string(),
+    projectId: v.optional(v.id("projects")), // optional
+    createdAt: v.number()
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, { title, projectId, createdAt }) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    if (!identity) throw new Error("Not authenticated");
 
-    const chat = await ctx.db.insert("chats", {
-      title: args.title,
-      userId: identity.subject,
-      createdAt: Date.now()
+    return ctx.db.insert("chats", {
+      title,
+      projectId, // undefined if no project selected
+      userId: identity.subject, // must exist
+      createdAt
     });
-
-    return chat;
   }
 });
+
+// List chats inside specific project
+// export const listChats = query({
+//   args: {
+//     projectId: v.optional(v.id("projects")) // now optional
+//   },
+//   handler: async (ctx, args) => {
+//     if (!args.projectId) return []; // return empty array if no project selected
+//     return await ctx.db
+//       .query("chats")
+//       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+//       .order("desc")
+//       .collect();
+//   }
+// });
 
 export const listChats = query({
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
+  args: {
+    projectId: v.optional(v.id("projects"))
+  },
+  handler: async (ctx, { projectId }) => {
+    if (projectId) {
+      // Chats inside a project
+      return await ctx.db
+        .query("chats")
+        .withIndex("by_project", (q) => q.eq("projectId", projectId))
+        .order("desc")
+        .collect();
     }
 
-    const chats = await ctx.db
+    // 🌍 Chats NOT in any project (global chats)
+    return await ctx.db
       .query("chats")
-      .withIndex("by_user", (q) => q.eq("userId", identity.subject))
+      .withIndex("by_project", (q) => q.eq("projectId", undefined))
       .order("desc")
       .collect();
-
-    return chats;
   }
 });
 
+// Delete a chat
 export const deleteChat = mutation({
   args: { id: v.id("chats") },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    if (!identity) throw new Error("Not authenticated");
 
     const chat = await ctx.db.get(args.id);
     if (!chat || chat.userId !== identity.subject) {
       throw new Error("Unauthorized");
     }
 
-    // Delete all messages in the chat
+    // Delete all messages linked to the chat
     const messages = await ctx.db
       .query("messages")
       .withIndex("by_chat", (q) => q.eq("chatId", args.id))
       .collect();
 
-    for (const message of messages) {
-      await ctx.db.delete(message._id);
+    for (const m of messages) {
+      await ctx.db.delete(m._id);
     }
 
-    // Delete the chat
     await ctx.db.delete(args.id);
-
-    // Return null for consistency (changed from void)
     return null;
   }
 });
 
+// Get a single chat (still valid)
 export const getChat = query({
   args: { id: v.id("chats"), userId: v.string() },
   handler: async (ctx, args) => {
-    try {
-      const chat = await ctx.db.get(args.id);
-
-      // Return null if chat doesn't exist or user is not authorized
-      if (!chat || chat.userId !== args.userId) {
-        console.log("❌ Chat not found or unauthorized", {
-          chatExists: !!chat,
-          chatUserId: chat?.userId,
-          requestUserId: args.userId
-        });
-        return null;
-      }
-
-      console.log("✅ Chat found and authorized");
-      return chat;
-    } catch (error) {
-      console.error("🔥 Error in getChat:", error);
-      return null;
-    }
+    const chat = await ctx.db.get(args.id);
+    if (!chat || chat.userId !== args.userId) return null;
+    return chat;
   }
 });
 
+// Update chat title (unchanged)
 export const updateChatTitle = mutation({
   args: {
     id: v.id("chats"),
@@ -101,19 +128,72 @@ export const updateChatTitle = mutation({
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    if (!identity) throw new Error("Not authenticated");
 
     const chat = await ctx.db.get(args.id);
     if (!chat || chat.userId !== identity.subject) {
       throw new Error("Unauthorized");
     }
 
-    await ctx.db.patch(args.id, {
-      title: args.title
-    });
-
+    await ctx.db.patch(args.id, { title: args.title });
     return null;
   }
 });
+// Add this to your convex/chats.ts file
+
+// export const updateChatProject = mutation({
+//   args: {
+//     chatId: v.id("chats"),
+//     projectId: v.id("projects")
+//   },
+//   handler: async (ctx, { chatId, projectId }) => {
+//     const identity = await ctx.auth.getUserIdentity();
+//     if (!identity) throw new Error("Not authenticated");
+
+//     // Get the chat and verify ownership
+//     const chat = await ctx.db.get(chatId);
+//     if (!chat || chat.userId !== identity.subject) {
+//       throw new Error("Unauthorized");
+//     }
+
+//     // Verify project ownership
+//     const project = await ctx.db.get(projectId);
+//     if (!project || project.userId !== identity.subject) {
+//       throw new Error("Unauthorized project access");
+//     }
+
+//     // Update the chat's projectId
+//     await ctx.db.patch(chatId, { projectId });
+//     return null;
+//   }
+// });
+
+// Add this to your convex/chats.ts file
+
+export const updateChatProject = mutation({
+  args: {
+    chatId: v.id("chats"),
+    projectId: v.id("projects")
+  },
+  handler: async (ctx, { chatId, projectId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    // Get the chat and verify ownership
+    const chat = await ctx.db.get(chatId);
+    if (!chat || chat.userId !== identity.subject) {
+      throw new Error("Unauthorized");
+    }
+
+    // Verify project ownership
+    const project = await ctx.db.get(projectId);
+    if (!project || project.userId !== identity.subject) {
+      throw new Error("Unauthorized project access");
+    }
+
+    // Update the chat's projectId
+    await ctx.db.patch(chatId, { projectId });
+    return null;
+  }
+});
+// Add this to your convex/chats.ts file
