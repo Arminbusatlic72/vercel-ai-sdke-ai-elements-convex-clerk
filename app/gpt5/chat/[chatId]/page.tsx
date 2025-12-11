@@ -1,20 +1,74 @@
-// // import ChatInterface from "../../../components/ChatInterface";
+// // // import ChatInterface from "../../../components/ChatInterface";
+// // import { Id } from "@/convex/_generated/dataModel";
+// // import { api } from "@/convex/_generated/api";
+// // import { getConvexClient } from "@/lib/convex";
+// // import { redirect } from "next/navigation";
+// // import { auth } from "@clerk/nextjs/server";
+// // import AiChat from "@/components/AiChat";
+
+// // interface ChatPageProps {
+// //   params: {
+// //     chatId: Id<"chats">;
+// //   };
+// //   initialMessages: Array<{
+// //     _id: Id<"messages">;
+// //     content: string;
+// //     role: "user" | "assistant";
+// //   }>;
+// // }
+
+// // export default async function ChatPage({ params }: ChatPageProps) {
+// //   const { chatId } = await params;
+
+// //   // Get user authentication
+// //   const { userId } = await auth();
+
+// //   if (!userId) {
+// //     redirect("/");
+// //   }
+
+// //   try {
+// //     // Get Convex client and fetch chat and messages
+// //     const convex = getConvexClient();
+
+// //     // Check if chat exists & user is authorized to view it
+// //     const chat = await convex.query(api.chats.getChat, {
+// //       id: chatId,
+// //       userId
+// //     });
+
+// //     if (!chat) {
+// //       console.log(
+// //         "⚠️ Chat not found or unauthorized, redirecting to dashboard"
+// //       );
+// //       redirect("/dashboard");
+// //     }
+// //     console.log("🔍 Route params:", params);
+// //     // Get initial messages
+// //     const initialMessages = await convex.query(api.messages.list, { chatId });
+
+// //     return (
+// //       <div className="w-full h-screen">
+// //         {/* <AiChat chatId={chatId} initialMessages={initialMessages} /> */}
+// //       </div>
+// //     );
+// //   } catch (error) {
+// //     console.error("🔥 Error loading chat:", error);
+// //     redirect("/dashboard");
+// //   }
+// // }
+// // "use client";
 // import { Id } from "@/convex/_generated/dataModel";
 // import { api } from "@/convex/_generated/api";
 // import { getConvexClient } from "@/lib/convex";
 // import { redirect } from "next/navigation";
 // import { auth } from "@clerk/nextjs/server";
 // import AiChat from "@/components/AiChat";
+// import { allModels } from "@/lib/ai-models";
 
+// import AiChatWrapper from "@/components/AiChatWrapper"; // <-
 // interface ChatPageProps {
-//   params: {
-//     chatId: Id<"chats">;
-//   };
-//   initialMessages: Array<{
-//     _id: Id<"messages">;
-//     content: string;
-//     role: "user" | "assistant";
-//   }>;
+//   params: { chatId: Id<"chats"> };
 // }
 
 // export default async function ChatPage({ params }: ChatPageProps) {
@@ -22,7 +76,6 @@
 
 //   // Get user authentication
 //   const { userId } = await auth();
-
 //   if (!userId) {
 //     redirect("/");
 //   }
@@ -31,42 +84,44 @@
 //     // Get Convex client and fetch chat and messages
 //     const convex = getConvexClient();
 
-//     // Check if chat exists & user is authorized to view it
-//     const chat = await convex.query(api.chats.getChat, {
-//       id: chatId,
-//       userId
-//     });
-
+//     // Check if chat exists & user is authorized
+//     const chat = await convex.query(api.chats.getChat, { id: chatId, userId });
 //     if (!chat) {
 //       console.log(
 //         "⚠️ Chat not found or unauthorized, redirecting to dashboard"
 //       );
 //       redirect("/dashboard");
 //     }
-//     console.log("🔍 Route params:", params);
+
 //     // Get initial messages
-//     const initialMessages = await convex.query(api.messages.list, { chatId });
+//     const messages = await convex.query(api.messages.list, { chatId });
 
 //     return (
-//       <div className="w-full h-screen">
-//         {/* <AiChat chatId={chatId} initialMessages={initialMessages} /> */}
-//       </div>
+//       <AiChatWrapper
+//         chatId={chatId}
+//         initialMessages={messages || []}
+//         models={allModels}
+//         showWebSearch={true}
+//         chatApiNamespace="chats"
+//         messageApiNamespace="messages"
+//       />
 //     );
 //   } catch (error) {
 //     console.error("🔥 Error loading chat:", error);
 //     redirect("/dashboard");
 //   }
 // }
-// "use client";
+
 import { Id } from "@/convex/_generated/dataModel";
 import { api } from "@/convex/_generated/api";
 import { getConvexClient } from "@/lib/convex";
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import AiChat from "@/components/AiChat";
-import { allModels } from "@/lib/ai-models";
+// 1. Change import from 'allModels' to 'openaiModels'
+import { openaiModels } from "@/lib/ai-models";
 
-import AiChatWrapper from "@/components/AiChatWrapper"; // <-
+import AiChatWrapper from "@/components/AiChatWrapper";
 interface ChatPageProps {
   params: { chatId: Id<"chats"> };
 }
@@ -100,7 +155,7 @@ export default async function ChatPage({ params }: ChatPageProps) {
       <AiChatWrapper
         chatId={chatId}
         initialMessages={messages || []}
-        models={allModels}
+        models={openaiModels} // 2. Pass 'openaiModels' instead of 'allModels'
         showWebSearch={true}
         chatApiNamespace="chats"
         messageApiNamespace="messages"

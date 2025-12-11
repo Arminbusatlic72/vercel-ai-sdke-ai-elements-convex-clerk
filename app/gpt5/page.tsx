@@ -5,8 +5,7 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useUser } from "@clerk/nextjs";
 import AiChat from "@/components/AiChat";
-import { googleModels } from "@/lib/ai-models";
-import { Loader2 } from "lucide-react";
+import { openaiModels } from "@/lib/ai-models";
 
 export default function ChatPage({ params }: { params: { chatId: string } }) {
   const { user } = useUser();
@@ -28,12 +27,12 @@ export default function ChatPage({ params }: { params: { chatId: string } }) {
     <AiChat
       chatId={chatId}
       initialMessages={messages}
-      models={googleModels}
+      models={openaiModels}
       createChatApi={api.chats.createChat}
       storeMessageApi={api.messages.storeMessage}
       updateChatTitleApi={api.chats.updateChatTitle}
       showWebSearch={true}
-      defaultModel="gemini-2.0-flash-exp"
+      defaultModel="gpt-4o-mini"
       apiEndpoint="/api/chat"
     />
   );

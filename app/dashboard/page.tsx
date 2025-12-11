@@ -6,7 +6,6 @@ import { Id } from "@/convex/_generated/dataModel";
 import { useUser } from "@clerk/nextjs";
 import AiChat from "@/components/AiChat";
 import { googleModels } from "@/lib/ai-models";
-import { Loader2 } from "lucide-react";
 
 export default function ChatPage({ params }: { params: { chatId: string } }) {
   const { user } = useUser();

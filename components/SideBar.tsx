@@ -17,6 +17,7 @@ import { Id, Doc } from "@/convex/_generated/dataModel";
 
 import NewProjectModal from "./modals/NewProjectModal";
 import DeleteProjectModal from "./modals/DeleteProjectModal";
+import Logo from "./Logo";
 
 type ProjectId = Id<"projects">;
 type ChatId = Id<"chats">;
@@ -282,9 +283,12 @@ export default function Sidebar({ basePath }: SidebarProps) {
         {/* Header */}
         <div className="p-4 border-b border-gray-200/50">
           <div className="from-gray-50 to-white rounded-xl p-4 inline-flex justify-center items-center">
-            <Link href="/dashboard">
-              <BotIcon className="w-12 h-12 text-gray-600 mr-2" />
-              <h3>Projects</h3>
+            <Link
+              href="/dashboard"
+              // Add flex container styling here if needed to align the logo and text
+              className="flex items-center"
+            >
+              <Logo className="w-40 h-40 text-gray-600 mr-2" />
             </Link>
           </div>
           <div className="mt-2 space-y-2">
