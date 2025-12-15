@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useChat } from "@ai-sdk/react";
 import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api"; // ✅ import directly
+import { api } from "@/convex/_generated/api";
 import type { Id, TableNames } from "@/convex/_generated/dataModel";
 import { extractMessageText } from "@/lib/message";
 
@@ -49,13 +49,27 @@ export function useAiChat<
   );
   const [webSearch, setWebSearch] = useState(false);
 
-  const { messages, sendMessage, status } = useChat();
+  // ✅ FIX: Convert Convex messages to AI SDK UIMessage format
+  const formattedInitialMessages = useMemo(() => {
+    return initialMessages.map((msg) => ({
+      id: msg._id,
+      role: msg.role,
+      parts: [{ type: "text", text: msg.content }]
+    }));
+  }, [initialMessages]);
+
+  const { messages, sendMessage, status } = useChat({
+    api: "/api/chat",
+    id: chatId,
+    initialMessages: formattedInitialMessages, // ← Seed with history
+    body: { model, webSearch }
+  });
+
   const savedMessageKeys = useRef(new Set<string>());
   const isSavingRef = useRef(false);
   const isInitializedRef = useRef(false);
   const hasUpdatedTitleRef = useRef(false);
 
-  // ✅ Use Convex API directly
   const createChat = useMutation(api.chats.createChat);
   const storeMessage = useMutation(api.messages.storeMessage);
   const updateChatTitle = useMutation(api.chats.updateChatTitle);
@@ -78,6 +92,7 @@ export function useAiChat<
     inputRef.current?.focus();
   }, [chatId]);
 
+  // ✅ Initialize saved message keys from history
   useEffect(() => {
     if (isInitializedRef.current) return;
     isInitializedRef.current = true;
@@ -96,7 +111,7 @@ export function useAiChat<
         return (
           msg.role === "user" &&
           fullText &&
-          savedMessageKeys.current.has(`user-${fullText}`)
+          !savedMessageKeys.current.has(`user-${fullText}`)
         );
       });
       if (!firstUserMessage) return;
@@ -116,7 +131,7 @@ export function useAiChat<
     updateTitle();
   }, [messages, chatId, updateChatTitle]);
 
-  // Save messages and create chat if missing
+  // Save new messages to Convex
   useEffect(() => {
     if (!messages.length || isSavingRef.current) return;
 
@@ -137,21 +152,19 @@ export function useAiChat<
           if (!fullText) continue;
           const key = `${msg.role}-${fullText}`;
 
+          // Create chat on first user message if needed
           if (!activeChatId && msg.role === "user") {
             const title =
               fullText.slice(0, 50) + (fullText.length > 50 ? "..." : "");
 
-            // create chat WITHOUT requiring projectId
             const newChatId = await createChat({
               title,
-              projectId: projectId ?? undefined, // allow undefined
+              projectId: projectId ?? undefined,
               createdAt: Date.now()
             });
 
-            // Force cast to match generic ChatTableName
             activeChatId = newChatId as Id<ChatTableName>;
             setChatId(activeChatId);
-
             hasUpdatedTitleRef.current = true;
           }
 
@@ -176,8 +189,7 @@ export function useAiChat<
     saveMessages();
   }, [messages, chatId, projectId, createChat, storeMessage]);
 
-  // Save messages and create chat if missing
-
+  // Auto-scroll
   useEffect(() => {
     const scrollContainer = conversationRef.current;
     if (!scrollContainer) return;
@@ -198,9 +210,17 @@ export function useAiChat<
         ? "google"
         : modelMap.get(model)?.provider || "google";
 
+      // ✅ Pass model and provider in body
       sendMessage(
         { text: msg.text, files: msg.files },
-        { body: { chatId, model, provider, webSearch } }
+        {
+          body: {
+            chatId,
+            model,
+            provider,
+            webSearch
+          }
+        }
       );
       setInput("");
     },
@@ -211,6 +231,7 @@ export function useAiChat<
     (text: string) => navigator.clipboard.writeText(text),
     []
   );
+
   const toggleWebSearch = useCallback(() => setWebSearch((prev) => !prev), []);
 
   const handleRetry = useCallback(() => {
@@ -223,6 +244,7 @@ export function useAiChat<
     );
   }, [messages, sendMessage, chatId, model, modelMap, webSearch]);
 
+  // ✅ Only display messages NOT in initialMessages (avoid duplicates in UI)
   const displayMessages = useMemo(() => {
     return messages.filter((msg) => {
       const fullText = extractMessageText(msg.parts);

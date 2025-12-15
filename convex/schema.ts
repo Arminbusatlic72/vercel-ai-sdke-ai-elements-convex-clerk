@@ -24,5 +24,14 @@ export default defineSchema({
     createdAt: v.number()
   })
     .index("by_chat", ["chatId"])
-    .index("by_project", ["projectId"])
+    .index("by_project", ["projectId"]),
+
+  gpts: defineTable({
+    gptId: v.string(), // Unique GPT ID like "sales" or "support"
+    model: v.string(), // Model name e.g., "gpt-4o-mini"
+    apiKey: v.optional(v.string()), // Optional API key
+    systemPrompt: v.string(), // Full GPT instructions
+    createdAt: v.number(),
+    updatedAt: v.number()
+  }).index("by_gptId", ["gptId"])
 });

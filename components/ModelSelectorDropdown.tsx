@@ -18,10 +18,10 @@ import {
 
 const allGPTs = {
   llms: [
-    { name: "GPT 5", href: "/gpt5" },
-    { name: "Claude", href: "/llm/claude" },
-    { name: "LLaMA", href: "/llm/llama" },
-    { name: "Mistral", href: "/llm/mistral" }
+    { name: "GPT 5", href: "/gpt5" }
+    // { name: "Claude", href: "/llm/claude" },
+    // { name: "LLaMA", href: "/llm/llama" },
+    // { name: "Mistral", href: "/llm/mistral" }
   ],
   diagnostic: [
     { name: "Trend Diagnostic Toolkit", href: "/tool/diagnostic/trend-diag" },

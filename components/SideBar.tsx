@@ -50,7 +50,7 @@ function ProjectItem({
         <div
           onClick={() => onSelect(project._id)}
           className={cn(
-            "p-2 rounded cursor-pointer font-semibold flex items-center gap-2 flex-1",
+            "p-2 rounded cursor-pointer flex items-center gap-2 flex-1",
             isSelected ? "bg-gray-200" : "hover:bg-gray-100"
           )}
         >
