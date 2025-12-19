@@ -28,9 +28,15 @@ export const processMessageContent = (content: string): string => {
 };
 
 // Extract plain text from message parts
-export const extractMessageText = (parts: any[]): string =>
-  parts
-    .filter((p) => p.type === "text")
+export const extractMessageText = (parts?: any[]): string => {
+  // If parts is missing or not an array, return an empty string
+  if (!parts || !Array.isArray(parts)) {
+    return "";
+  }
+
+  return parts
+    .filter((p) => p && p.type === "text")
     .map((p) => p.text)
     .join("\n")
     .trim();
+};

@@ -22,7 +22,7 @@ export default function ChatRow({ chat, onDelete, basePath }: ChatRowProps) {
   return (
     <div className="group relative">
       <Link
-        href={`${basePath}/${chat._id}`}
+        href={`${basePath}/chat/${chat._id}`}
         className="flex items-center gap-3 p-3 rounded-lg hover:bg-white/50 transition-all duration-200 border border-transparent hover:border-gray-200/50"
       >
         <MessageSquare className="w-4 h-4 text-gray-400 shrink-0" />

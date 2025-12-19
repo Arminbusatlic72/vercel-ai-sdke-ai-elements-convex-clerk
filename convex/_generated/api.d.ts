@@ -9,6 +9,7 @@
  */
 
 import type * as chats from "../chats.js";
+import type * as gpts from "../gpts.js";
 import type * as messages from "../messages.js";
 import type * as project from "../project.js";
 
@@ -20,6 +21,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   chats: typeof chats;
+  gpts: typeof gpts;
   messages: typeof messages;
   project: typeof project;
 }>;

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 
 interface GPTConfig {
   gptId: string;
@@ -10,55 +12,49 @@ interface GPTConfig {
 }
 
 export default function AdminPage() {
-  const [gpts, setGpts] = useState<GPTConfig[]>([]);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const gpts = useQuery(api.gpts.listGpts) ?? [];
+  const upsertGpt = useMutation(api.gpts.upsertGpt);
+  const deleteGptMutation = useMutation(api.gpts.deleteGpt);
 
   // Form state
   const [gptId, setGptId] = useState("");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
 
   const resetForm = () => {
     setGptId("");
     setModel("");
     setApiKey("");
     setSystemPrompt("");
-    setEditingIndex(null);
+    setIsEditing(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const newGpt: GPTConfig = { gptId, model, apiKey, systemPrompt };
+    await upsertGpt({
+      gptId,
+      model,
+      apiKey: apiKey || undefined,
+      systemPrompt
+    });
 
-    if (editingIndex !== null) {
-      // Update existing GPT
-      const updated = [...gpts];
-      updated[editingIndex] = newGpt;
-      setGpts(updated);
-    } else {
-      // Add new GPT
-      setGpts([...gpts, newGpt]);
-    }
-
-    console.log("GPT saved:", newGpt);
     resetForm();
   };
 
-  const handleEdit = (index: number) => {
-    const g = gpts[index];
+  const handleEdit = (g: GPTConfig) => {
     setGptId(g.gptId);
     setModel(g.model);
     setApiKey(g.apiKey || "");
     setSystemPrompt(g.systemPrompt);
-    setEditingIndex(index);
+    setIsEditing(true);
   };
 
-  const handleDelete = (index: number) => {
-    const updated = gpts.filter((_, i) => i !== index);
-    setGpts(updated);
-    if (editingIndex === index) resetForm();
+  const handleDelete = async (gptId: string) => {
+    await deleteGptMutation({ gptId });
+    resetForm();
   };
 
   return (
@@ -70,7 +66,7 @@ export default function AdminPage() {
         className="space-y-4 border p-4 rounded shadow mb-8"
       >
         <h2 className="text-xl font-semibold">
-          {editingIndex !== null ? "Edit GPT" : "Add New GPT"}
+          {isEditing ? "Edit GPT" : "Add New GPT"}
         </h2>
 
         <div>
@@ -82,6 +78,7 @@ export default function AdminPage() {
             placeholder="e.g., sales"
             className="w-full border rounded p-2"
             required
+            disabled={isEditing}
           />
         </div>
 
@@ -124,9 +121,9 @@ export default function AdminPage() {
             type="submit"
             className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
           >
-            {editingIndex !== null ? "Update GPT" : "Add GPT"}
+            {isEditing ? "Update GPT" : "Add GPT"}
           </button>
-          {editingIndex !== null && (
+          {gptId && (
             <button
               type="button"
               onClick={resetForm}
@@ -142,9 +139,9 @@ export default function AdminPage() {
         <div>
           <h2 className="text-xl font-semibold mb-4">Saved GPTs</h2>
           <ul className="space-y-4">
-            {gpts.map((g, index) => (
+            {gpts.map((g) => (
               <li
-                key={index}
+                key={g.gptId}
                 className="border rounded p-4 shadow flex justify-between items-start"
               >
                 <div>
@@ -154,13 +151,13 @@ export default function AdminPage() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => handleEdit(index)}
+                    onClick={() => handleEdit(g)}
                     className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600"
                   >
                     Edit
                   </button>
                   <button
-                    onClick={() => handleDelete(index)}
+                    onClick={() => handleDelete(g.gptId)}
                     className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
                   >
                     Delete

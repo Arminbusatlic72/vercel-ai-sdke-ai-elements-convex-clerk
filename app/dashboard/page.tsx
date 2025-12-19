@@ -28,9 +28,9 @@ export default function ChatPage({ params }: { params: { chatId: string } }) {
       chatId={chatId}
       initialMessages={messages}
       models={googleModels}
-      createChatApi={api.chats.createChat}
-      storeMessageApi={api.messages.storeMessage}
-      updateChatTitleApi={api.chats.updateChatTitle}
+      // createChatApi={api.chats.createChat}
+      // storeMessageApi={api.messages.storeMessage}
+      // updateChatTitleApi={api.chats.updateChatTitle}
       showWebSearch={true}
       defaultModel="gemini-2.0-flash-exp"
       apiEndpoint="/api/chat"

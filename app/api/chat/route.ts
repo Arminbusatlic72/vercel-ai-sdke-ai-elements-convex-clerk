@@ -15,7 +15,7 @@ const openai = createOpenAI({
 
 export async function POST(req: Request) {
   const {
-    messages, // UIMessages from useChat with parts[] format
+    messages, // UIMessage[] from useChat (with parts structure)
     model,
     webSearch,
     provider
@@ -33,10 +33,10 @@ export async function POST(req: Request) {
     selectedModel = google(model);
   }
 
-  // ✅ CORRECT: Convert UIMessages (with parts[]) to ModelMessages (with content)
+  // ✅ convertToModelMessages converts UIMessage[] to ModelMessage[]
   const result = streamText({
     model: selectedModel,
-    messages: convertToModelMessages(messages), // This converts UIMessage[] to CoreMessage[]
+    messages: convertToModelMessages(messages), // Convert UIMessages to ModelMessages
     system: webSearch
       ? "You are a helpful assistant with web search capabilities. Use the search tool when needed."
       : "You are a helpful assistant that can answer questions and help with tasks."
