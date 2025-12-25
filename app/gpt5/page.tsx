@@ -1,43 +1,3 @@
-// "use client";
-
-// import { useQuery } from "convex/react";
-// import { api } from "@/convex/_generated/api";
-// import { Id } from "@/convex/_generated/dataModel";
-// import { useUser } from "@clerk/nextjs";
-// import AiChat from "@/components/AiChat";
-// import { openaiModels } from "@/lib/ai-models";
-
-// export default function ChatPage({ params }: { params: { chatId: string } }) {
-//   const { user } = useUser();
-
-//   const chatId = params.chatId as Id<"chats">;
-
-//   // 🔥 Only run if chatId exists
-//   const messages = useQuery(api.messages.list, chatId ? { chatId } : "skip");
-
-//   // 🔥 Only run if BOTH exist
-//   const chat = useQuery(
-//     api.chats.getChat,
-//     user?.id && chatId ? { id: chatId, userId: user.id } : "skip"
-//   );
-
-//   //
-
-//   return (
-//     <AiChat
-//       chatId={chatId}
-//       initialMessages={messages}
-//       models={openaiModels}
-//       // createChatApi={api.chats.createChat}
-//       // storeMessageApi={api.messages.storeMessage}
-//       // updateChatTitleApi={api.chats.updateChatTitle}
-//       showWebSearch={true}
-//       defaultModel="gpt-4o-mini"
-//       apiEndpoint="/api/chat"
-//     />
-//   );
-// }
-
 import AiChat from "@/components/AiChat";
 import { openaiModels } from "@/lib/ai-models";
 
@@ -47,6 +7,7 @@ export default function NewChatPage() {
       chatId={undefined}
       initialMessages={[]} // Force empty for new chats
       models={openaiModels}
+      showWebSearch
       defaultModel="gpt-4o-mini"
     />
   );

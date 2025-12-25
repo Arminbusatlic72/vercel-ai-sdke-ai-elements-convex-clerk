@@ -1,28 +1,34 @@
 "use client";
+
 import Link from "next/link";
 import { MessageSquare, Trash2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Id } from "@/convex/_generated/dataModel";
 
-// Define a generic chat type that works for both agents
 type ChatType = {
   _id: Id<"chats">;
   title: string;
   createdAt: number;
   userId: string;
+  gptId?: string;
 };
 
 interface ChatRowProps {
   chat: ChatType;
   onDelete: (id: Id<"chats">) => void;
-  basePath: string;
+  gptId?: string; // ✅ ADD
+  projectId?: Id<"projects">;
 }
 
-export default function ChatRow({ chat, onDelete, basePath }: ChatRowProps) {
+export default function ChatRow({ chat, onDelete }: ChatRowProps) {
+  const href = chat.gptId
+    ? `/gpt5/${chat.gptId}/chat/${chat._id}`
+    : `/gpt5/chat/${chat._id}`;
+
   return (
     <div className="group relative">
       <Link
-        href={`${basePath}/chat/${chat._id}`}
+        href={href}
         className="flex items-center gap-3 p-3 rounded-lg hover:bg-white/50 transition-all duration-200 border border-transparent hover:border-gray-200/50"
       >
         <MessageSquare className="w-4 h-4 text-gray-400 shrink-0" />

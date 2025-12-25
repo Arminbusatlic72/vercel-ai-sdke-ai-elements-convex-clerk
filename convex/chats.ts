@@ -1,64 +1,26 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
-// Create a chat inside a project
-// export const createChat = mutation({
-//   args: {
-//     title: v.string(),
-//     projectId: v.id("projects")
-//   },
-//   handler: async (ctx, args) => {
-//     const identity = await ctx.auth.getUserIdentity();
-//     if (!identity) throw new Error("Not authenticated");
-
-//     // Validate project ownership
-//     const project = await ctx.db.get(args.projectId);
-//     if (!project || project.userId !== identity.subject) {
-//       throw new Error("Unauthorized project access");
-//     }
-
-//     return await ctx.db.insert("chats", {
-//       title: args.title,
-//       userId: identity.subject,
-//       projectId: args.projectId,
-//       createdAt: Date.now()
-//     });
-//   }
-// });
-
 export const createChat = mutation({
   args: {
     title: v.string(),
-    projectId: v.optional(v.id("projects")), // optional
-    createdAt: v.number()
+    projectId: v.optional(v.id("projects")),
+    createdAt: v.number(),
+    gptId: v.optional(v.string())
   },
-  handler: async (ctx, { title, projectId, createdAt }) => {
+  handler: async (ctx, { title, projectId, createdAt, gptId }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
     return ctx.db.insert("chats", {
       title,
-      projectId, // undefined if no project selected
-      userId: identity.subject, // must exist
+      projectId,
+      gptId, // ✅ STORE IT
+      userId: identity.subject,
       createdAt
     });
   }
 });
-
-// List chats inside specific project
-// export const listChats = query({
-//   args: {
-//     projectId: v.optional(v.id("projects")) // now optional
-//   },
-//   handler: async (ctx, args) => {
-//     if (!args.projectId) return []; // return empty array if no project selected
-//     return await ctx.db
-//       .query("chats")
-//       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
-//       .order("desc")
-//       .collect();
-//   }
-// });
 
 export const listChats = query({
   args: {

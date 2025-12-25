@@ -84,6 +84,7 @@ export default function AdminPage() {
 
         <div>
           <label className="block font-semibold mb-1">Model</label>
+
           <input
             type="text"
             value={model}
@@ -91,6 +92,8 @@ export default function AdminPage() {
             placeholder="e.g., gpt-4o-mini"
             className="w-full border rounded p-2"
             required
+            autoComplete="off"
+            spellCheck={false}
           />
         </div>
 

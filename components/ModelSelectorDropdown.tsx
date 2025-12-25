@@ -4,8 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "../components/ui/button";
 import { ChevronDownIcon } from "@radix-ui/react-icons";
-
-// Radix Dropdown
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -16,14 +14,18 @@ import {
   DropdownMenuGroup
 } from "@radix-ui/react-dropdown-menu";
 
-const allGPTs = {
-  llms: [
-    { name: "GPT 5", href: "/gpt5" }
-    // { name: "Claude", href: "/llm/claude" },
-    // { name: "LLaMA", href: "/llm/llama" },
-    // { name: "Mistral", href: "/llm/mistral" }
-  ],
-  diagnostic: [
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+
+export default function ModelSelectorDropdown() {
+  const pathname = usePathname();
+
+  // Hardcoded links
+  const staticLLMs = [{ name: "GPT 5", href: "/gpt5" }];
+  const staticDashboard = [{ name: "Dashboard", href: "/" }];
+  const staticAdmin = [{ name: "Admin", href: "/admin" }];
+
+  const diagnostic = [
     { name: "Trend Diagnostic Toolkit", href: "/tool/diagnostic/trend-diag" },
     { name: "Trend Contrarian Toolkit", href: "/tool/diagnostic/trend-contra" },
     { name: "Brand Decoder", href: "/tool/diagnostic/brand-dec" },
@@ -31,8 +33,9 @@ const allGPTs = {
     { name: "Retail Space Analysis", href: "/tool/diagnostic/retail-sa" },
     { name: "Regional Code Analysis", href: "/tool/diagnostic/regional-ca" },
     { name: "Subculture Analysis", href: "/tool/diagnostic/subculture" }
-  ],
-  innovation: [
+  ];
+
+  const innovation = [
     {
       name: "Speculative Futures Toolkit",
       href: "/tool/innovation/speculative"
@@ -44,20 +47,24 @@ const allGPTs = {
     { name: "Culture Mapping Toolkit", href: "/tool/innovation/culture-map" },
     { name: "Visualizing Unknowns", href: "/tool/innovation/visualize" },
     { name: "Crisis Simulator", href: "/tool/innovation/crisis-sim" }
-  ]
-};
+  ];
 
-export default function ModelSelectorDropdown() {
-  const pathname = usePathname();
+  // Fetch dynamic GPTs from Convex
+  const dynamicGPTs = useQuery(api.gpts.listGpts) ?? [];
+  const dynamicLinks = dynamicGPTs.map((gpt) => ({
+    name: gpt.gptId,
+    href: `/gpt5/${gpt.gptId}`
+  }));
 
   const allLinks = [
-    ...allGPTs.llms,
-    ...allGPTs.diagnostic,
-    ...allGPTs.innovation
+    ...staticLLMs,
+    ...dynamicLinks,
+    ...diagnostic,
+    ...innovation
   ];
 
   const activeModel =
-    allLinks.find((item) => item.href === pathname) || allGPTs.llms[0];
+    allLinks.find((item) => item.href === pathname) || staticLLMs[0];
 
   const renderGroup = (label: string, models: any[], indent = false) => (
     <DropdownMenuGroup>
@@ -67,18 +74,13 @@ export default function ModelSelectorDropdown() {
 
       {models.map((item) => {
         const isActive = item.href === activeModel.href;
-
         return (
           <DropdownMenuItem key={item.href} asChild>
             <Link
               href={item.href}
-              className={`block py-2 text-sm cursor-pointer transition-colors
+              className={`uppercase block py-2 text-sm cursor-pointer transition-colors
                 ${indent ? "pl-8 pr-4" : "px-4"}
-                ${
-                  isActive
-                    ? "bg-blue-50 text-blue-700 font-semibold"
-                    : "text-gray-700 hover:bg-gray-100"
-                }`}
+                ${isActive ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100"}`}
             >
               {item.name}
             </Link>
@@ -106,13 +108,12 @@ export default function ModelSelectorDropdown() {
         align="end"
         className="w-72 mt-2 rounded-md bg-white shadow-lg p-1 border z-[100]"
       >
-        {renderGroup("Generic LLMs", allGPTs.llms)}
-
+        {renderGroup("Generic LLMs", staticLLMs)}
+        {renderGroup("Dynamic GPTs", dynamicLinks, true)}
         <DropdownMenuSeparator className="h-px bg-gray-200 my-1" />
-        {renderGroup("Diagnostic GPTs", allGPTs.diagnostic, true)}
-
+        {renderGroup("Diagnostic GPTs", diagnostic, true)}
         <DropdownMenuSeparator className="h-px bg-gray-200 my-1" />
-        {renderGroup("Innovation GPTs", allGPTs.innovation, true)}
+        {renderGroup("Innovation GPTs", innovation, true)}
       </DropdownMenuContent>
     </DropdownMenu>
   );

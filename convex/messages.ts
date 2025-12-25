@@ -131,6 +131,58 @@
 //   }
 // });
 
+// import { v } from "convex/values";
+// import { mutation, query } from "./_generated/server";
+
+// //
+// // LIST MESSAGES
+// //
+// export const list = query({
+//   args: { chatId: v.id("chats") },
+//   handler: async (ctx, { chatId }) => {
+//     return await ctx.db
+//       .query("messages")
+//       .withIndex("by_chat", (q) => q.eq("chatId", chatId))
+//       .order("asc")
+//       .collect();
+//   }
+// });
+
+// //
+// // STORE MESSAGE (ONLY ONE FUNCTION)
+// //
+// export const storeMessage = mutation({
+//   args: {
+//     chatId: v.id("chats"),
+//     content: v.string(),
+//     role: v.union(v.literal("user"), v.literal("assistant")),
+//     gptId: v.optional(v.string())
+//   },
+//   handler: async (ctx, { chatId, content, role }) => {
+//     return await ctx.db.insert("messages", {
+//       chatId,
+//       content, // no over-escaping
+//       role,
+
+//       createdAt: Date.now()
+//     });
+//   }
+// });
+
+// //
+// // LAST MESSAGE FOR SIDEBAR
+// //
+// export const getLastMessage = query({
+//   args: { chatId: v.id("chats") },
+//   handler: async (ctx, { chatId }) => {
+//     return await ctx.db
+//       .query("messages")
+//       .withIndex("by_chat", (q) => q.eq("chatId", chatId))
+//       .order("desc")
+//       .first();
+//   }
+// });
+
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
@@ -149,19 +201,56 @@ export const list = query({
 });
 
 //
-// STORE MESSAGE (ONLY ONE FUNCTION)
+// STORE MESSAGE (SINGLE FUNCTION, EXTENDED)
 //
+// export const storeMessage = mutation({
+//   args: {
+//     chatId: v.id("chats"),
+//     content: v.string(),
+//     role: v.union(v.literal("user"), v.literal("assistant")),
+//     gptId: v.optional(v.string()) // 👈 NEW
+//   },
+//   handler: async (ctx, { chatId, content, role, gptId }) => {
+//     return await ctx.db.insert("messages", {
+//       chatId,
+//       content,
+//       role,
+//       gptId: role === "assistant" ? gptId : undefined,
+//       createdAt: Date.now()
+//     });
+//   }
+// });
+
 export const storeMessage = mutation({
   args: {
     chatId: v.id("chats"),
     content: v.string(),
-    role: v.union(v.literal("user"), v.literal("assistant"))
+    role: v.union(v.literal("user"), v.literal("assistant")),
+    gptId: v.optional(v.string())
   },
-  handler: async (ctx, { chatId, content, role }) => {
+  handler: async (ctx, { chatId, content, role, gptId }) => {
+    if (role === "assistant") {
+      // Check if the exact same assistant message already exists
+      const existing = await ctx.db
+        .query("messages")
+        .withIndex("by_chat", (q) => q.eq("chatId", chatId))
+        .collect();
+
+      const duplicate = existing.find(
+        (m) => m.role === "assistant" && m.content === content
+      );
+
+      if (duplicate) {
+        return duplicate._id; // skip inserting duplicate
+      }
+    }
+
+    // Insert message
     return await ctx.db.insert("messages", {
       chatId,
-      content, // no over-escaping
+      content,
       role,
+      gptId: role === "assistant" ? gptId : undefined,
       createdAt: Date.now()
     });
   }

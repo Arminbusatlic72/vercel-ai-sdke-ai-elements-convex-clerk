@@ -7,48 +7,55 @@ import AiChat from "@/components/AiChat";
 import { openaiModels } from "@/lib/ai-models";
 
 interface ChatPageProps {
-  params: Promise<{ chatId: string }>;
+  params: {
+    gptId: string;
+    chatId: string;
+  };
 }
 
 export default async function ChatIdPage({ params }: ChatPageProps) {
   const { userId } = await auth();
+  if (!userId) redirect("/");
 
-  // 1. Ensure user is logged in
-  if (!userId) {
-    redirect("/");
+  const { chatId, gptId } = await params;
+
+  if (!chatId || !gptId) {
+    notFound();
   }
 
-  const { chatId } = await params;
-
-  // 2. Fetch Chat Metadata
-  // Note: Your getChat query explicitly requires the userId string
+  // 1️⃣ Load chat
   const chat = await fetchQuery(api.chats.getChat, {
     id: chatId as Id<"chats">,
-    userId: userId
+    userId
   });
 
-  // 3. If chat doesn't exist or unauthorized
-  if (!chat) {
-    notFound(); // or redirect("/gpt5")
+  if (!chat) notFound();
+
+  // 2️⃣ 🔐 HARD URL GUARD
+  if (chat.gptId !== gptId) {
+    if (chat.gptId) {
+      redirect(`/gpt/${chat.gptId}/chat/${chat._id}`);
+    } else {
+      redirect(`/gpt/chat/${chat._id}`);
+    }
   }
 
-  // 4. Fetch Messages (Using your 'list' query)
+  // 3️⃣ Load messages
   const messages = await fetchQuery(api.messages.list, {
-    chatId: chatId as Id<"chats">
+    chatId: chat._id
   });
 
-  // 5. Format for useAiChat hook
   const initialMessages = messages.map((msg) => ({
     _id: msg._id,
     role: msg.role as "user" | "assistant",
     content: msg.content
   }));
-  console.log("Initial Messages:", initialMessages);
 
   return (
     <AiChat
       key={chat._id}
-      chatId={chatId as Id<"chats">}
+      gptId={gptId}
+      chatId={chat._id}
       projectId={chat.projectId}
       initialMessages={initialMessages}
       models={openaiModels}

@@ -17,12 +17,12 @@ export default function DashboardLayout({
       <div className="flex h-dvh overflow-hidden min-h-0">
         <Authenticated>
           <Sidebar
-            listChatsApi={api.chats.listChats}
-            createChatApi={api.chats.createChat}
-            deleteChatApi={api.chats.deleteChat}
-            storeMessageApi={api.messages.storeMessage}
-            updateChatTitleApi={api.chats.updateChatTitle}
-            basePath="/gpt5/chat"
+          // listChatsApi={api.chats.listChats}
+          // createChatApi={api.chats.createChat}
+          // deleteChatApi={api.chats.deleteChat}
+          // storeMessageApi={api.messages.storeMessage}
+          // updateChatTitleApi={api.chats.updateChatTitle}
+          // basePath="/gpt5/chat"
           />
         </Authenticated>
 

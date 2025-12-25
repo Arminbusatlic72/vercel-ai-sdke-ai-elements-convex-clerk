@@ -255,6 +255,7 @@ export function useAiChat<
           body: {
             // ✅ Use the newly created ID (idToUse) or the existing one
             chatId: idToUse,
+            gptId,
             model,
             provider,
             webSearch
