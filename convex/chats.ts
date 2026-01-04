@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
+import { Id } from "./_generated/dataModel";
 export const createChat = mutation({
   args: {
     title: v.string(),
@@ -101,36 +102,6 @@ export const updateChatTitle = mutation({
     return null;
   }
 });
-// Add this to your convex/chats.ts file
-
-// export const updateChatProject = mutation({
-//   args: {
-//     chatId: v.id("chats"),
-//     projectId: v.id("projects")
-//   },
-//   handler: async (ctx, { chatId, projectId }) => {
-//     const identity = await ctx.auth.getUserIdentity();
-//     if (!identity) throw new Error("Not authenticated");
-
-//     // Get the chat and verify ownership
-//     const chat = await ctx.db.get(chatId);
-//     if (!chat || chat.userId !== identity.subject) {
-//       throw new Error("Unauthorized");
-//     }
-
-//     // Verify project ownership
-//     const project = await ctx.db.get(projectId);
-//     if (!project || project.userId !== identity.subject) {
-//       throw new Error("Unauthorized project access");
-//     }
-
-//     // Update the chat's projectId
-//     await ctx.db.patch(chatId, { projectId });
-//     return null;
-//   }
-// });
-
-// Add this to your convex/chats.ts file
 
 export const updateChatProject = mutation({
   args: {
@@ -158,4 +129,54 @@ export const updateChatProject = mutation({
     return null;
   }
 });
-// Add this to your convex/chats.ts file
+
+export const renameChat = mutation({
+  args: {
+    id: v.id("chats"),
+    title: v.string()
+  },
+  handler: async (ctx, { id, title }) => {
+    await ctx.db.patch(id, { title });
+  }
+});
+
+export const searchChats = query(
+  async (
+    { db },
+    {
+      projectId,
+      search
+    }: {
+      projectId?: Id<"projects">;
+      search: string;
+    }
+  ) => {
+    let chatQuery = db.query("chats");
+
+    if (projectId) {
+      chatQuery = chatQuery.filter((c) =>
+        c.eq(c.field("projectId"), projectId)
+      );
+    }
+
+    const chats = await chatQuery.collect();
+
+    if (!search) return chats;
+
+    const lowerSearch = search.toLowerCase();
+    return chats.filter((chat) =>
+      chat.title.toLowerCase().includes(lowerSearch)
+    );
+  }
+);
+export const updateChatModel = mutation({
+  args: {
+    chatId: v.id("chats"),
+    model: v.string()
+  },
+  handler: async (ctx, { chatId, model }) => {
+    await ctx.db.patch(chatId, {
+      model
+    });
+  }
+});

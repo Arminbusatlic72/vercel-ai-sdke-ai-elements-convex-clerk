@@ -44,6 +44,17 @@ export default async function ChatIdPage({ params }: ChatPageProps) {
     content: msg.content
   }));
   console.log("Initial Messages:", initialMessages);
+  // fetch GPT if chat has one
+  let gpt = null;
+
+  if (chat.gptId) {
+    gpt = await fetchQuery(api.gpts.getGpt, {
+      gptId: chat.gptId
+    });
+  }
+
+  const resolvedDefaultModel = chat.model ?? gpt?.model ?? "gpt-4o-mini";
+  console.log(resolvedDefaultModel);
 
   return (
     <AiChat
@@ -53,7 +64,7 @@ export default async function ChatIdPage({ params }: ChatPageProps) {
       initialMessages={initialMessages}
       models={openaiModels}
       showWebSearch
-      defaultModel="gpt-4o-mini"
+      defaultModel={resolvedDefaultModel}
     />
   );
 }

@@ -12,7 +12,9 @@ export const perplexityModels: readonly ModelConfig[] = [
 
 export const openaiModels: readonly ModelConfig[] = [
   { name: "GPT-4o", value: "gpt-4o", provider: "OpenAI" },
-  { name: "GPT-4o Mini", value: "gpt-4o-mini", provider: "OpenAI" }
+  { name: "GPT-4o Mini", value: "gpt-4o-mini", provider: "OpenAI" },
+  { name: "GPT-5", value: "gpt-5", provider: "OpenAI" },
+  { name: "GPT-5 Mini", value: "gpt-5-mini", provider: "OpenAI" }
 ] as const;
 
 export const allModels: readonly ModelConfig[] = [

@@ -11,14 +11,14 @@ export default function LandingPage() {
       <section className="w-full px-4 py-8 mx-auto max-w-7xl sm:px-6 lg:px-8 flex flex-col items-center space-y-10 text-center">
         <header className="space-y-6">
           <h1 className="text-5xl font-bold tracking-tight sm:text-7xl bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 bg-clip-text text-transparent">
-            AI Agent assistant
+            Story Engine Sandbox
           </h1>
           <p className="max-w-[600px] text-lg text-gray-600 md:text-xl/relaxed xl:text-2xl/relaxed">
-            Meet your new AI chat companion that goes beyond conversation - it
-            can actually get things done
+            Generative AI assistant that organize, surface, and structure
+            signals so that sansemaking can occur.
             <br />
             <span className="text-gray-400 text-sm">
-              powered by IBM wxflows tool
+              Powered by scenarioDNA's Culture Mapping{" "}
             </span>
           </p>
         </header>
@@ -48,16 +48,16 @@ export default function LandingPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-16 pt-8 max-w-3xl mx-auto">
           {[
             {
-              title: "Fast",
-              description: " Real time streamed response"
+              title: "Responsive",
+              description: "Continuously attuned to emerging signals"
             },
             {
-              title: "Modern",
-              description: "NextJS 15, Tailwind CSS, Convex, Clerk"
+              title: "Structured",
+              description: "Interpretation governed by a patented framework"
             },
             {
-              title: "Smart",
-              description: "Powered by your favorite LLM"
+              title: "Augmented",
+              description: "AI-assisted, human-governed sensemaking"
             }
           ].map(({ title, description }) => (
             <div key={title} className="text-center">

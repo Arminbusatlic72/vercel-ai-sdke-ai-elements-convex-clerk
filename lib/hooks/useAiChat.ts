@@ -29,7 +29,7 @@ export interface UseAiChatProps<
 }
 
 export function useAiChat<
-  ChatTableName extends TableNames,
+  ChatTableName extends "chats",
   MessageTableName extends TableNames
 >({
   gptId,
@@ -59,6 +59,7 @@ export function useAiChat<
   // --- Convex Mutations ---
   const createChat = useMutation(api.chats.createChat);
   const storeMessage = useMutation(api.messages.storeMessage);
+  const updateChatModel = useMutation(api.chats.updateChatModel);
 
   // --- Memoized Messages ---
   const formattedInitialMessages = useMemo(
@@ -77,6 +78,13 @@ export function useAiChat<
     initialMessages: initialLoaded ? [] : formattedInitialMessages,
     body: { model, webSearch, chatId }
   });
+  useEffect(() => {
+    const id = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0); // 50ms delay usually enough
+
+    return () => clearTimeout(id);
+  }, []);
 
   // --- Hydrate initial messages once ---
   useEffect(() => {
@@ -182,6 +190,25 @@ export function useAiChat<
     return { modelMap: map, groupedModels: groups };
   }, [models]);
 
+  // --- Handlers ---
+  const handleModelChange = useCallback(
+    async (value: string) => {
+      setModel(value);
+
+      if (chatId) {
+        try {
+          await updateChatModel({
+            chatId,
+            model: value
+          });
+        } catch (err) {
+          console.error("Failed to update chat model:", err);
+        }
+      }
+    },
+    [chatId, updateChatModel]
+  );
+
   const handleSubmit = useCallback(
     async (msg: { text: string; files?: any[] }) => {
       if (!msg.text.trim() && !msg.files?.length) return;
@@ -264,7 +291,7 @@ export function useAiChat<
     input,
     setInput,
     model,
-    setModel,
+    setModel: handleModelChange,
     webSearch,
     toggleWebSearch: () => setWebSearch((prev) => !prev),
     handleSubmit,

@@ -91,3 +91,15 @@ export const deleteProject = mutation({
   }
   // Add this to your convex/project.ts file
 });
+
+export const renameProject = mutation({
+  args: {
+    id: v.id("projects"),
+    name: v.string()
+  },
+  handler: async (ctx, { id, name }) => {
+    await ctx.db.patch(id, {
+      name
+    });
+  }
+});

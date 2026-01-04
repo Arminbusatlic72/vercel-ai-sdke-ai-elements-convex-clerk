@@ -16,6 +16,7 @@ import {
 
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { formatGptTitle } from "@/lib/formatters";
 
 export default function ModelSelectorDropdown() {
   const pathname = usePathname();
@@ -25,43 +26,14 @@ export default function ModelSelectorDropdown() {
   const staticDashboard = [{ name: "Dashboard", href: "/" }];
   const staticAdmin = [{ name: "Admin", href: "/admin" }];
 
-  const diagnostic = [
-    { name: "Trend Diagnostic Toolkit", href: "/tool/diagnostic/trend-diag" },
-    { name: "Trend Contrarian Toolkit", href: "/tool/diagnostic/trend-contra" },
-    { name: "Brand Decoder", href: "/tool/diagnostic/brand-dec" },
-    { name: "Digital Flâneur", href: "/tool/diagnostic/flaneur" },
-    { name: "Retail Space Analysis", href: "/tool/diagnostic/retail-sa" },
-    { name: "Regional Code Analysis", href: "/tool/diagnostic/regional-ca" },
-    { name: "Subculture Analysis", href: "/tool/diagnostic/subculture" }
-  ];
-
-  const innovation = [
-    {
-      name: "Speculative Futures Toolkit",
-      href: "/tool/innovation/speculative"
-    },
-    {
-      name: "Packaged Goods Innovation Toolkit",
-      href: "/tool/innovation/packaged-g"
-    },
-    { name: "Culture Mapping Toolkit", href: "/tool/innovation/culture-map" },
-    { name: "Visualizing Unknowns", href: "/tool/innovation/visualize" },
-    { name: "Crisis Simulator", href: "/tool/innovation/crisis-sim" }
-  ];
-
   // Fetch dynamic GPTs from Convex
   const dynamicGPTs = useQuery(api.gpts.listGpts) ?? [];
   const dynamicLinks = dynamicGPTs.map((gpt) => ({
-    name: gpt.gptId,
+    name: formatGptTitle(gpt.gptId),
     href: `/gpt5/${gpt.gptId}`
   }));
 
-  const allLinks = [
-    ...staticLLMs,
-    ...dynamicLinks,
-    ...diagnostic,
-    ...innovation
-  ];
+  const allLinks = [...staticLLMs, ...dynamicLinks];
 
   const activeModel =
     allLinks.find((item) => item.href === pathname) || staticLLMs[0];
@@ -111,9 +83,8 @@ export default function ModelSelectorDropdown() {
         {renderGroup("Generic LLMs", staticLLMs)}
         {renderGroup("Dynamic GPTs", dynamicLinks, true)}
         <DropdownMenuSeparator className="h-px bg-gray-200 my-1" />
-        {renderGroup("Diagnostic GPTs", diagnostic, true)}
-        <DropdownMenuSeparator className="h-px bg-gray-200 my-1" />
-        {renderGroup("Innovation GPTs", innovation, true)}
+        {renderGroup("Navigation", staticDashboard)}
+        {renderGroup("Admin", staticAdmin)}
       </DropdownMenuContent>
     </DropdownMenu>
   );

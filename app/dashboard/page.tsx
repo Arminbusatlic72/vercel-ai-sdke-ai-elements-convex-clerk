@@ -1,39 +1,65 @@
 "use client";
 
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
 import { useUser } from "@clerk/nextjs";
-import AiChat from "@/components/AiChat";
-import { googleModels } from "@/lib/ai-models";
+import { Authenticated } from "convex/react";
 
-export default function ChatPage({ params }: { params: { chatId: string } }) {
-  const { user } = useUser();
+const cards = [
+  {
+    title: "Start a Chat",
+    description: "Ask questions and explore ideas instantly."
+  },
+  {
+    title: "Create Project",
+    description: "Organize conversations into projects."
+  },
+  {
+    title: "Browse History",
+    description: "Revisit previous chats anytime."
+  },
+  {
+    title: "Manage Settings",
+    description: "Customize your experience."
+  }
+];
 
-  const chatId = params.chatId as Id<"chats">;
+export default function DashboardWelcomePage() {
+  const { user, isLoaded } = useUser();
 
-  // 🔥 Only run if chatId exists
-  const messages = useQuery(api.messages.list, chatId ? { chatId } : "skip");
+  if (!isLoaded) return null;
 
-  // 🔥 Only run if BOTH exist
-  const chat = useQuery(
-    api.chats.getChat,
-    user?.id && chatId ? { id: chatId, userId: user.id } : "skip"
-  );
-
-  //
+  const name =
+    user?.firstName || user?.username || user?.emailAddresses[0]?.emailAddress;
 
   return (
-    <AiChat
-      chatId={chatId}
-      initialMessages={messages}
-      models={googleModels}
-      // createChatApi={api.chats.createChat}
-      // storeMessageApi={api.messages.storeMessage}
-      // updateChatTitleApi={api.chats.updateChatTitle}
-      showWebSearch={true}
-      defaultModel="gemini-2.0-flash-exp"
-      apiEndpoint="/api/chat"
-    />
+    <Authenticated>
+      <div className="flex h-full items-center justify-center p-6">
+        <div className="w-full max-w-5xl space-y-8">
+          {/* Welcome */}
+          <div className="text-center space-y-2">
+            <h1 className="text-3xl font-semibold">
+              Welcome{name ? `, ${name}` : ""} 👋
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Select a project or start a new chat from the sidebar.
+            </p>
+          </div>
+
+          {/* Cards */}
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            {cards.map((card) => (
+              <div
+                key={card.title}
+                className="rounded-xl border p-4 text-center hover:bg-muted transition cursor-pointer"
+              >
+                <h3 className="font-medium">{card.title}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {card.description}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Authenticated>
   );
 }
