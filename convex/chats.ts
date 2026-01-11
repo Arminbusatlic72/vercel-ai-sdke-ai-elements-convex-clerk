@@ -2,8 +2,32 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
 import { Id } from "./_generated/dataModel";
+// export const createChat = mutation({
+//   args: {
+//     userId: v.string(),
+//     title: v.string(),
+//     projectId: v.optional(v.id("projects")),
+//     createdAt: v.number(),
+//     gptId: v.optional(v.string())
+//   },
+//   handler: async (ctx, { title, projectId, createdAt, gptId }) => {
+//     const identity = await ctx.auth.getUserIdentity();
+//     if (!identity) throw new Error("Not authenticated");
+
+//     return ctx.db.insert("chats", {
+//       title,
+//       projectId,
+//       gptId, // ✅ STORE IT
+//       userId: identity.subject,
+//       createdAt
+//     });
+//   }
+// });
+
+// convex/chats.ts
 export const createChat = mutation({
   args: {
+    // Remove userId from here since you get it from auth
     title: v.string(),
     projectId: v.optional(v.id("projects")),
     createdAt: v.number(),
@@ -16,13 +40,12 @@ export const createChat = mutation({
     return ctx.db.insert("chats", {
       title,
       projectId,
-      gptId, // ✅ STORE IT
+      gptId,
       userId: identity.subject,
       createdAt
     });
   }
 });
-
 export const listChats = query({
   args: {
     projectId: v.optional(v.id("projects"))

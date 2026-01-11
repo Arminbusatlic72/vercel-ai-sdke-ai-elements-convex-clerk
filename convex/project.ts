@@ -1,20 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 
-// Create a new project
-// export const createProject = mutation({
-//   args: { name: v.string() },
-//   handler: async (ctx, args) => {
-//     const identity = await ctx.auth.getUserIdentity();
-//     if (!identity) throw new Error("Not authenticated");
-
-//     return await ctx.db.insert("projects", {
-//       name: args.name,
-//       userId: identity.subject
-//     });
-//   }
-// });
-
 export const createProject = mutation({
   args: {
     name: v.string(),

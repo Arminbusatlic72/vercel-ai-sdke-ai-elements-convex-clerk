@@ -36,7 +36,9 @@ export default function ModelSelectorDropdown() {
   const allLinks = [...staticLLMs, ...dynamicLinks];
 
   const activeModel =
-    allLinks.find((item) => item.href === pathname) || staticLLMs[0];
+    [...allLinks]
+      .sort((a, b) => b.href.length - a.href.length)
+      .find((item) => pathname.startsWith(item.href)) || staticLLMs[0];
 
   const renderGroup = (label: string, models: any[], indent = false) => (
     <DropdownMenuGroup>

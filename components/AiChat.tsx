@@ -39,11 +39,13 @@ export interface AiChatProps<
   ChatTableName extends TableNames,
   MessageTableName extends TableNames
 > {
-  chatId?: Id<ChatTableName>;
+  // chatId?: Id<ChatTableName>;
+  chatId?: Id<"chats">;
   gptId?: string; // ✅ ADD THIS
   projectId?: Id<"projects">;
   initialMessages?: Array<{
-    _id: Id<MessageTableName>;
+    // _id: Id<MessageTableName>;
+    _id: Id<"messages">;
     role: "user" | "assistant";
     content: string;
   }>;

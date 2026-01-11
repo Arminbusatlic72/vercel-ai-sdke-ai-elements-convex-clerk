@@ -68,3 +68,16 @@ export interface ChatRequestBody {
   newMessage: string;
   chatId: Id<"chats">;
 }
+
+export interface GPTConfig {
+  gptId: string;
+  model: string;
+  apiKey?: string;
+  systemPrompt: string;
+  vectorStoreId?: string;
+  pdfFiles?: {
+    fileName: string;
+    openaiFileId: string;
+    uploadedAt: number;
+  }[];
+}

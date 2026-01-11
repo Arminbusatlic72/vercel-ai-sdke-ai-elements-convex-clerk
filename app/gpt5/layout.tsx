@@ -1,6 +1,5 @@
 "use client";
 
-// import "streamdown";
 import { Authenticated } from "convex/react";
 import Header from "@/components/Header";
 import Sidebar from "@/components/SideBar";
