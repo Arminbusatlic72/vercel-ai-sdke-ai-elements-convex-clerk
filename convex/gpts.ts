@@ -165,35 +165,75 @@ export const getGeneralSettings = query({
 });
 
 // Create or update general settings
+// export const upsertGeneralSettings = mutation({
+//   args: {
+//     defaultApiKey: v.optional(v.string()),
+//     defaultSystemPrompt: v.optional(v.string()),
+//     userId: v.string()
+//   },
+//   handler: async ({ db }, { defaultApiKey, defaultSystemPrompt, userId }) => {
+//     const now = Date.now();
+
+//     // Check if settings already exist
+//     const existing = await db
+//       .query("generalSettings")
+//       .withIndex("by_settingsId", (q) => q.eq("settingsId", "default"))
+//       .first();
+
+//     const settingsData = {
+//       settingsId: "default",
+//       defaultApiKey,
+//       defaultSystemPrompt,
+//       updatedAt: now,
+//       updatedBy: userId
+//     };
+
+//     if (existing) {
+//       await db.patch(existing._id, settingsData);
+//       return { status: "updated" };
+//     } else {
+//       await db.insert("generalSettings", settingsData);
+//       return { status: "created" };
+//     }
+//   }
+// });
+
 export const upsertGeneralSettings = mutation({
   args: {
     defaultApiKey: v.optional(v.string()),
-    defaultSystemPrompt: v.optional(v.string()),
-    userId: v.string()
+    defaultSystemPrompt: v.optional(v.string())
   },
-  handler: async ({ db }, { defaultApiKey, defaultSystemPrompt, userId }) => {
-    const now = Date.now();
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
 
-    // Check if settings already exist
-    const existing = await db
-      .query("generalSettings")
-      .withIndex("by_settingsId", (q) => q.eq("settingsId", "default"))
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
       .first();
 
-    const settingsData = {
-      settingsId: "default",
-      defaultApiKey,
-      defaultSystemPrompt,
-      updatedAt: now,
-      updatedBy: userId
-    };
+    if (!user || user.role !== "admin") {
+      throw new Error("Admin only");
+    }
+
+    // Save global settings
+    const existing = await ctx.db.query("generalSettings").first();
 
     if (existing) {
-      await db.patch(existing._id, settingsData);
-      return { status: "updated" };
+      await ctx.db.patch(existing._id, {
+        defaultApiKey: args.defaultApiKey,
+        defaultSystemPrompt: args.defaultSystemPrompt,
+        updatedAt: Date.now()
+      });
     } else {
-      await db.insert("generalSettings", settingsData);
-      return { status: "created" };
+      await ctx.db.insert("generalSettings", {
+        settingsId: "default",
+        defaultApiKey: args.defaultApiKey,
+        defaultSystemPrompt: args.defaultSystemPrompt,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        updatedBy: user.clerkId
+      });
     }
   }
 });

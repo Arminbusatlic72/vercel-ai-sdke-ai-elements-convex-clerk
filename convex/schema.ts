@@ -1,74 +1,20 @@
-// import { defineSchema, defineTable } from "convex/server";
-// import { v } from "convex/values";
-
-// export default defineSchema({
-//   projects: defineTable({
-//     name: v.string(),
-//     userId: v.string(), // owner
-//     projectId: v.optional(v.id("projects")),
-//     gptId: v.optional(v.string()) // good
-//   })
-//     .index("by_user", ["userId"])
-//     .index("by_user_gpt", ["userId", "gptId"]), // ✅ important
-
-//   // chats: defineTable({
-//   //   title: v.string(),
-//   //   userId: v.string(),
-//   //   projectId: v.optional(v.id("projects")),
-//   //   gptId: v.optional(v.string()), // good
-//   //   createdAt: v.number()
-//   // })
-//   chats: defineTable({
-//     title: v.string(),
-//     userId: v.string(),
-//     projectId: v.optional(v.id("projects")),
-//     gptId: v.optional(v.string()),
-
-//     // ✅ ADD THESE
-//     model: v.optional(v.string()),
-//     provider: v.optional(v.union(v.literal("openai"), v.literal("google"))),
-
-//     createdAt: v.number()
-//   })
-//     .index("by_user", ["userId"])
-//     .index("by_project", ["projectId"])
-//     .index("by_gpt", ["gptId"]),
-
-//   messages: defineTable({
-//     chatId: v.id("chats"),
-//     projectId: v.optional(v.id("projects")),
-//     content: v.string(),
-//     role: v.union(v.literal("user"), v.literal("assistant")),
-//     gptId: v.optional(v.string()),
-//     createdAt: v.number()
-//   })
-//     .index("by_chat", ["chatId"])
-//     .index("by_project", ["projectId"]),
-
-//   gpts: defineTable({
-//     gptId: v.string(), // "sales", "support", etc.
-//     model: v.string(),
-//     apiKey: v.optional(v.string()),
-//     vectorStoreId: v.optional(v.string()),
-//     pdfFiles: v.optional(
-//       v.array(
-//         v.object({
-//           fileName: v.string(),
-//           openaiFileId: v.string(),
-//           uploadedAt: v.number()
-//         })
-//       )
-//     ),
-//     systemPrompt: v.string(),
-//     createdAt: v.number(),
-//     updatedAt: v.number()
-//   }).index("by_gptId", ["gptId"])
-// });
-
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  // ✅ NEW: Users Table
+  users: defineTable({
+    clerkId: v.string(),
+    email: v.string(),
+    name: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+    role: v.union(v.literal("admin"), v.literal("user")), // ✅ Keep this
+    createdAt: v.number(),
+    updatedAt: v.number()
+  })
+    .index("by_clerkId", ["clerkId"])
+    .index("by_role", ["role"]),
+
   projects: defineTable({
     name: v.string(),
     userId: v.string(), // owner
@@ -94,7 +40,10 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_gpt", ["gptId"]),
 
+  // In schema.ts - update the chats table
+
   messages: defineTable({
+    // userId: v.string(),
     chatId: v.id("chats"),
     projectId: v.optional(v.id("projects")),
     content: v.string(),
@@ -103,6 +52,7 @@ export default defineSchema({
     createdAt: v.number()
   })
     .index("by_chat", ["chatId"])
+    // .index("by_user", ["userId"])
     .index("by_project", ["projectId"]),
 
   gpts: defineTable({
@@ -129,6 +79,7 @@ export default defineSchema({
     settingsId: v.string(), // Always "default"
     defaultApiKey: v.optional(v.string()),
     defaultSystemPrompt: v.optional(v.string()),
+    createdAt: v.number(),
     updatedAt: v.number(),
     updatedBy: v.string() // userId of who updated it
   }).index("by_settingsId", ["settingsId"]) // For fast lookup

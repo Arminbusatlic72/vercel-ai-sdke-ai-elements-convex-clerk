@@ -208,7 +208,7 @@ export default function ChatRow({
   );
 
   const linkClass = cn(
-    "flex items-center gap-3 p-3 rounded-lg transition-all duration-200",
+    "flex items-center gap-3 p-1 rounded-lg transition-all duration-200",
     variant === "project"
       ? "hover:bg-blue-50 border-l-2 border-transparent hover:border-blue-300"
       : "hover:bg-gray-100 border border-transparent hover:border-gray-200",

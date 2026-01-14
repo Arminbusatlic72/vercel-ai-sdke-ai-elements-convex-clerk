@@ -184,7 +184,7 @@ export default function SidebarProjects({
 }: SidebarProjectsProps) {
   const [isOpen, setIsOpen] = useState(true);
 
-  if (projects.length === 0) return null;
+  // if (projects.length === 0) return null;
 
   return (
     <div className="space-y-2">

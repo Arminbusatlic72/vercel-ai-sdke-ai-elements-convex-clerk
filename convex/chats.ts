@@ -2,29 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
 import { Id } from "./_generated/dataModel";
-// export const createChat = mutation({
-//   args: {
-//     userId: v.string(),
-//     title: v.string(),
-//     projectId: v.optional(v.id("projects")),
-//     createdAt: v.number(),
-//     gptId: v.optional(v.string())
-//   },
-//   handler: async (ctx, { title, projectId, createdAt, gptId }) => {
-//     const identity = await ctx.auth.getUserIdentity();
-//     if (!identity) throw new Error("Not authenticated");
 
-//     return ctx.db.insert("chats", {
-//       title,
-//       projectId,
-//       gptId, // ✅ STORE IT
-//       userId: identity.subject,
-//       createdAt
-//     });
-//   }
-// });
-
-// convex/chats.ts
 export const createChat = mutation({
   args: {
     // Remove userId from here since you get it from auth
@@ -46,28 +24,47 @@ export const createChat = mutation({
     });
   }
 });
+
 export const listChats = query({
-  args: {
-    projectId: v.optional(v.id("projects"))
-  },
+  args: { projectId: v.optional(v.id("projects")) },
   handler: async (ctx, { projectId }) => {
-    if (projectId) {
-      // Chats inside a project
-      return await ctx.db
-        .query("chats")
-        .withIndex("by_project", (q) => q.eq("projectId", projectId))
-        .order("desc")
-        .collect();
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    let q = ctx.db
+      .query("chats")
+      .withIndex("by_user", (q) => q.eq("userId", identity.subject));
+
+    if (projectId !== undefined) {
+      q = q.filter((c) => c.eq(c.field("projectId"), projectId));
     }
 
-    // 🌍 Chats NOT in any project (global chats)
-    return await ctx.db
-      .query("chats")
-      .withIndex("by_project", (q) => q.eq("projectId", undefined))
-      .order("desc")
-      .collect();
+    return await q.order("desc").collect();
   }
 });
+
+// export const listChats = query({
+//   args: {
+//     projectId: v.optional(v.id("projects"))
+//   },
+//   handler: async (ctx, { projectId }) => {
+//     if (projectId) {
+//       // Chats inside a project
+//       return await ctx.db
+//         .query("chats")
+//         .withIndex("by_project", (q) => q.eq("projectId", projectId))
+//         .order("desc")
+//         .collect();
+//     }
+
+//     // 🌍 Chats NOT in any project (global chats)
+//     return await ctx.db
+//       .query("chats")
+//       .withIndex("by_project", (q) => q.eq("projectId", undefined))
+//       .order("desc")
+//       .collect();
+//   }
+// });
 
 // Delete a chat
 export const deleteChat = mutation({
@@ -106,7 +103,6 @@ export const getChat = query({
   }
 });
 
-// Update chat title (unchanged)
 export const updateChatTitle = mutation({
   args: {
     id: v.id("chats"),
@@ -153,6 +149,8 @@ export const updateChatProject = mutation({
   }
 });
 
+// });
+
 export const renameChat = mutation({
   args: {
     id: v.id("chats"),
@@ -163,9 +161,41 @@ export const renameChat = mutation({
   }
 });
 
+// });
+
+// export const searchChats = query(
+//   async (
+//     { db },
+//     {
+//       projectId,
+//       search
+//     }: {
+//       projectId?: Id<"projects">;
+//       search: string;
+//     }
+//   ) => {
+//     let chatQuery = db.query("chats");
+
+//     if (projectId) {
+//       chatQuery = chatQuery.filter((c) =>
+//         c.eq(c.field("projectId"), projectId)
+//       );
+//     }
+
+//     const chats = await chatQuery.collect();
+
+//     if (!search) return chats;
+
+//     const lowerSearch = search.toLowerCase();
+//     return chats.filter((chat) =>
+//       chat.title.toLowerCase().includes(lowerSearch)
+//     );
+//   }
+// );
+
 export const searchChats = query(
   async (
-    { db },
+    ctx,
     {
       projectId,
       search
@@ -174,8 +204,16 @@ export const searchChats = query(
       search: string;
     }
   ) => {
-    let chatQuery = db.query("chats");
+    // ✅ Get the currently logged-in user
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return []; // Not authenticated, return empty
 
+    // ✅ Start query scoped to userId
+    let chatQuery = ctx.db
+      .query("chats")
+      .withIndex("by_user", (q) => q.eq("userId", identity.subject));
+
+    // ✅ Optionally filter by project
     if (projectId) {
       chatQuery = chatQuery.filter((c) =>
         c.eq(c.field("projectId"), projectId)
@@ -184,6 +222,7 @@ export const searchChats = query(
 
     const chats = await chatQuery.collect();
 
+    // ✅ Filter by search term if provided
     if (!search) return chats;
 
     const lowerSearch = search.toLowerCase();
@@ -192,6 +231,7 @@ export const searchChats = query(
     );
   }
 );
+
 export const updateChatModel = mutation({
   args: {
     chatId: v.id("chats"),

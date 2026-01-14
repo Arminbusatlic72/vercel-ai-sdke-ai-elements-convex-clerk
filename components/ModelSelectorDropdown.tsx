@@ -21,12 +21,16 @@ import { formatGptTitle } from "@/lib/formatters";
 export default function ModelSelectorDropdown() {
   const pathname = usePathname();
 
-  // Hardcoded links
+  // ✅ Convex user (source of truth)
+  const convexUser = useQuery(api.users.getCurrentUser);
+  const isAdmin = convexUser?.role === "admin";
+
+  // Static links
   const staticLLMs = [{ name: "GPT 5", href: "/gpt5" }];
-  const staticDashboard = [{ name: "Dashboard", href: "/" }];
+  const staticDashboard = [{ name: "Dashboard", href: "/dashboard" }];
   const staticAdmin = [{ name: "Admin", href: "/admin" }];
 
-  // Fetch dynamic GPTs from Convex
+  // Dynamic GPTs
   const dynamicGPTs = useQuery(api.gpts.listGpts) ?? [];
   const dynamicLinks = dynamicGPTs.map((gpt) => ({
     name: formatGptTitle(gpt.gptId),
@@ -54,7 +58,11 @@ export default function ModelSelectorDropdown() {
               href={item.href}
               className={`uppercase block py-2 text-sm cursor-pointer transition-colors
                 ${indent ? "pl-8 pr-4" : "px-4"}
-                ${isActive ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100"}`}
+                ${
+                  isActive
+                    ? "bg-blue-50 text-blue-700 font-semibold"
+                    : "text-gray-700 hover:bg-gray-100"
+                }`}
             >
               {item.name}
             </Link>
@@ -84,9 +92,13 @@ export default function ModelSelectorDropdown() {
       >
         {renderGroup("Generic LLMs", staticLLMs)}
         {renderGroup("Dynamic GPTs", dynamicLinks, true)}
+
         <DropdownMenuSeparator className="h-px bg-gray-200 my-1" />
+
         {renderGroup("Navigation", staticDashboard)}
-        {renderGroup("Admin", staticAdmin)}
+
+        {/* 🔐 Admin only */}
+        {isAdmin && renderGroup("Admin", staticAdmin)}
       </DropdownMenuContent>
     </DropdownMenu>
   );

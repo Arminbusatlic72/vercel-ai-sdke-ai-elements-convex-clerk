@@ -1,148 +1,3 @@
-// //
-
-// "use client";
-
-// import { useState } from "react";
-// import { Id } from "@/convex/_generated/dataModel";
-// import { Search, ChevronDown, MessageSquare, X } from "lucide-react";
-// import ChatRow from "./ChatRow";
-// import { cn } from "@/lib/utils";
-
-// type ChatId = Id<"chats">;
-
-// interface SidebarChatsProps {
-//   chats: any[];
-//   displayChats: any[];
-//   isSearchOpen: boolean;
-//   searchTerm: string;
-//   debouncedSearch: string;
-//   onSearchToggle: () => void;
-//   onSearchChange: (value: string) => void;
-//   onClearSearch: () => void;
-//   onCloseSearch: () => void;
-//   onDeleteChat: (id: ChatId) => void;
-// }
-
-// export default function SidebarChats({
-//   chats,
-//   displayChats,
-//   isSearchOpen,
-//   searchTerm,
-//   debouncedSearch,
-//   onSearchToggle,
-//   onSearchChange,
-//   onClearSearch,
-//   onCloseSearch,
-//   onDeleteChat
-// }: SidebarChatsProps) {
-//   const [isOpen, setIsOpen] = useState(true);
-
-//   if (chats.length === 0) return null;
-
-//   const handleToggleDropdown = () => {
-//     setIsOpen((prev) => !prev);
-//   };
-
-//   const handleSearchClick = (e: React.MouseEvent) => {
-//     e.stopPropagation();
-//     onSearchToggle();
-//   };
-
-//   const handleCloseSearch = (e: React.MouseEvent) => {
-//     e.stopPropagation();
-//     onCloseSearch();
-//   };
-
-//   const handleClearSearch = (e: React.MouseEvent) => {
-//     e.stopPropagation();
-//     onClearSearch();
-//   };
-
-//   return (
-//     <div className="space-y-2">
-//       {/* Header */}
-//       <div className="flex items-center justify-between px-2">
-//         <button
-//           onClick={handleToggleDropdown}
-//           className="flex items-center gap-2 hover:bg-gray-50 rounded-lg px-2 py-1 transition-colors"
-//         >
-//           <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wider">
-//             <MessageSquare className="w-3 h-3" />
-//             All Chats ({chats.length})
-//           </div>
-//           <ChevronDown
-//             className={cn(
-//               "w-4 h-4 text-gray-400 transition-transform duration-200",
-//               !isOpen && "rotate-180"
-//             )}
-//           />
-//         </button>
-
-//         <button
-//           onClick={handleSearchClick}
-//           className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-//           aria-label={isSearchOpen ? "Close search" : "Open search"}
-//         >
-//           <Search className="w-4 h-4 text-gray-500" />
-//         </button>
-//       </div>
-
-//       {/* Dropdown */}
-//       {isOpen && (
-//         <div className="space-y-2">
-//           {isSearchOpen && (
-//             <div className="px-2">
-//               <div className="relative">
-//                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-//                 <input
-//                   autoFocus
-//                   value={searchTerm}
-//                   onChange={(e) => onSearchChange(e.target.value)}
-//                   onKeyDown={(e) => {
-//                     if (e.key === "Escape") {
-//                       onCloseSearch();
-//                     }
-//                   }}
-//                   placeholder="Search chats..."
-//                   className="w-full pl-10 pr-8 py-2 text-sm border border-gray-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-//                 />
-//                 {searchTerm && (
-//                   <button
-//                     onClick={handleClearSearch}
-//                     className="absolute right-3 top-1/2 transform -translate-y-1/2 p-0.5 hover:bg-gray-100 rounded"
-//                     aria-label="Clear search"
-//                   >
-//                     <X className="w-3 h-3 text-gray-400" />
-//                   </button>
-//                 )}
-//               </div>
-//             </div>
-//           )}
-
-//           {/* Show all chats when not searching, filtered chats when searching */}
-//           {(isSearchOpen ? displayChats : chats).map((chat) => (
-//             <ChatRow
-//               key={chat._id}
-//               chat={chat}
-//               onDelete={(id) => onDeleteChat(id as ChatId)}
-//               highlight={isSearchOpen ? searchTerm : undefined}
-//             />
-//           ))}
-
-//           {isSearchOpen && debouncedSearch && displayChats.length === 0 && (
-//             <div className="text-center p-4 border border-gray-200 rounded-lg bg-gray-50">
-//               <p className="text-gray-500 text-sm">
-//                 No chats found for{" "}
-//                 <span className="font-medium">"{debouncedSearch}"</span>
-//               </p>
-//             </div>
-//           )}
-//         </div>
-//       )}
-//     </div>
-//   );
-// }
-
 "use client";
 
 import { useState } from "react";
@@ -172,7 +27,7 @@ export default function SidebarChats({
     setSearchQuery,
     clearSearch,
     debouncedQuery,
-    isSearching,
+    hasSearchQuery: isSearching,
     isLoading,
     chats,
     isEmpty,
@@ -222,7 +77,7 @@ export default function SidebarChats({
       <div className="flex items-center justify-between">
         <button
           onClick={handleToggleDropdown}
-          className="flex items-center gap-2 hover:bg-gray-50 rounded-lg px-2 py-1 transition-colors cursor-pointer"
+          className="flex items-center justify-between gap-2 hover:bg-gray-50 rounded-lg px-2 py-1 transition-colors cursor-pointer"
         >
           <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wider">
             <MessageSquare className="w-4 h-4" />
@@ -235,6 +90,7 @@ export default function SidebarChats({
             )}
           />
         </button>
+
         {/* Only show search button when section is open */}
         {isOpen && (
           <button

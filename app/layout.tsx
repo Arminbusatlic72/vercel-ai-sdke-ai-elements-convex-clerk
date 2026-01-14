@@ -24,14 +24,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ConvexClientProvider>
-      <html lang="en">
-        <body
-          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        >
-          {children}
-        </body>
-      </html>
-    </ConvexClientProvider>
+    <html lang="en">
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      >
+        <ConvexClientProvider>{children}</ConvexClientProvider>
+      </body>
+    </html>
   );
 }

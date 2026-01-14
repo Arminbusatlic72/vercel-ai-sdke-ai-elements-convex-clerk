@@ -118,6 +118,7 @@ import { openaiModels } from "@/lib/ai-models";
 import { Folder, MessageSquare, Plus } from "lucide-react";
 import Link from "next/link";
 import ProjectChatCard from "@/components/ProjectChatCard";
+import ProjectHeader from "@/components/ProjectPageHeader";
 
 interface ProjectPageProps {
   params: {
@@ -195,18 +196,7 @@ export default async function ProjectPage({
       {/* Project Header */}
       <div className="p-6 border-b border-gray-200 bg-white">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Folder className="w-8 h-8 text-blue-500" />
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {project.name}
-              </h1>
-              <p className="text-sm text-gray-500 mt-1">
-                {projectChats.length} chat
-                {projectChats.length !== 1 ? "s" : ""} in this project
-              </p>
-            </div>
-          </div>
+          <ProjectHeader projectId={projectId} />
 
           {/* New Chat Button */}
           <Link
@@ -244,9 +234,6 @@ export default async function ProjectPage({
             ) : (
               <div>
                 <div className="mb-6">
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    All Chats in "{project.name}"
-                  </h2>
                   <p className="text-sm text-gray-500 mt-1">
                     Click on any chat to continue the conversation
                   </p>
