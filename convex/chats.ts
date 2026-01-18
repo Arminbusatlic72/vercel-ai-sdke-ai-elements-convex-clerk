@@ -25,46 +25,46 @@ export const createChat = mutation({
   }
 });
 
-export const listChats = query({
-  args: { projectId: v.optional(v.id("projects")) },
-  handler: async (ctx, { projectId }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return [];
-
-    let q = ctx.db
-      .query("chats")
-      .withIndex("by_user", (q) => q.eq("userId", identity.subject));
-
-    if (projectId !== undefined) {
-      q = q.filter((c) => c.eq(c.field("projectId"), projectId));
-    }
-
-    return await q.order("desc").collect();
-  }
-});
-
 // export const listChats = query({
-//   args: {
-//     projectId: v.optional(v.id("projects"))
-//   },
+//   args: { projectId: v.optional(v.id("projects")) },
 //   handler: async (ctx, { projectId }) => {
-//     if (projectId) {
-//       // Chats inside a project
-//       return await ctx.db
-//         .query("chats")
-//         .withIndex("by_project", (q) => q.eq("projectId", projectId))
-//         .order("desc")
-//         .collect();
+//     const identity = await ctx.auth.getUserIdentity();
+//     if (!identity) return [];
+
+//     let q = ctx.db
+//       .query("chats")
+//       .withIndex("by_user", (q) => q.eq("userId", identity.subject));
+
+//     if (projectId !== undefined) {
+//       q = q.filter((c) => c.eq(c.field("projectId"), projectId));
 //     }
 
-//     // 🌍 Chats NOT in any project (global chats)
-//     return await ctx.db
-//       .query("chats")
-//       .withIndex("by_project", (q) => q.eq("projectId", undefined))
-//       .order("desc")
-//       .collect();
+//     return await q.order("desc").collect();
 //   }
 // });
+
+export const listChats = query({
+  args: {
+    projectId: v.optional(v.id("projects"))
+  },
+  handler: async (ctx, { projectId }) => {
+    if (projectId) {
+      // Chats inside a project
+      return await ctx.db
+        .query("chats")
+        .withIndex("by_project", (q) => q.eq("projectId", projectId))
+        .order("desc")
+        .collect();
+    }
+
+    // 🌍 Chats NOT in any project (global chats)
+    return await ctx.db
+      .query("chats")
+      .withIndex("by_project", (q) => q.eq("projectId", undefined))
+      .order("desc")
+      .collect();
+  }
+});
 
 // Delete a chat
 export const deleteChat = mutation({

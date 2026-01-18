@@ -1,8 +1,7 @@
 import { SignedIn, SignedOut, SignInButton } from "@clerk/nextjs";
 import { ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+
 import Link from "next/link";
-import { title } from "process";
 
 export default function LandingPage() {
   return (

@@ -304,9 +304,16 @@ export const getGpt = query({
 /**
  * List all GPTs (admin dashboard)
  */
+// export const listGpts = query({
+//   handler: async ({ db }) => {
+//     return await db.query("gpts").collect();
+//   }
+// });
+
 export const listGpts = query({
-  handler: async ({ db }) => {
-    return await db.query("gpts").collect();
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("gpts").collect();
   }
 });
 
