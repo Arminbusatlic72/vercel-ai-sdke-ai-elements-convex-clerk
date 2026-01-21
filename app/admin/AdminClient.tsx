@@ -1,5 +1,5 @@
 "use client";
-
+import { Id } from "@/convex/_generated/dataModel";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -105,7 +105,6 @@ export default function AdminClient() {
     setIsSubmitting(true);
 
     const finalGptId = sanitizeGptId(gptIdInput);
-
     if (!finalGptId) {
       modalActions.openError("Invalid GPT ID", "Please enter a valid GPT ID");
       setIsSubmitting(false);
@@ -117,7 +116,10 @@ export default function AdminClient() {
         gptId: finalGptId,
         model,
         apiKey: apiKey || undefined,
-        systemPrompt
+        systemPrompt,
+        packageId: selectedPackageId
+          ? (selectedPackageId as Id<"packages">)
+          : undefined // Send to Convex
       });
       resetForm();
       modalActions.openSuccess(
@@ -126,27 +128,28 @@ export default function AdminClient() {
       );
     } catch (error) {
       console.error("Error saving GPT:", error);
-      modalActions.openError(
-        "Error Saving GPT",
-        "Failed to save GPT. Please try again."
-      );
+      modalActions.openError("Error Saving GPT", "Failed to save GPT.");
     } finally {
       setIsSubmitting(false);
     }
   };
-
+  const [selectedPackageId, setSelectedPackageId] = useState<
+    Id<"packages"> | string | undefined
+  >("");
   const handleEdit = (g: GPTConfig) => {
     setGptId(g.gptId);
     setGptIdInput(g.gptId);
     setModel(g.model);
     setApiKey(g.apiKey || "");
     setSystemPrompt(g.systemPrompt);
+    setSelectedPackageId(g.packageId || ""); // Set package on edit
     setIsEditing(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleDeleteClick = (gptId: string) => {
     setPendingDeleteGptId(gptId);
+    setSelectedPackageId(undefined);
     modalActions.openConfirmDeleteGPT({
       gptId,
       name: gptId
@@ -355,6 +358,8 @@ export default function AdminClient() {
               generalSystemPrompt={generalSystemPrompt}
               isSubmitting={isSubmitting}
               sanitizedPreview={sanitizedPreview}
+              selectedPackageId={selectedPackageId}
+              onPackageChange={setSelectedPackageId}
               showPreview={showPreview}
               modelOptions={modelOptions}
               onGptIdChange={setGptIdInput}

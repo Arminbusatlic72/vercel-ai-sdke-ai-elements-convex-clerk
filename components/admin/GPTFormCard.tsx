@@ -1,3 +1,6 @@
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import { LoadingSpinner } from "./LoadingSpinner";
 
 interface GPTFormCardProps {
@@ -11,6 +14,8 @@ interface GPTFormCardProps {
   sanitizedPreview: string;
   showPreview: boolean;
   modelOptions: string[];
+  selectedPackageId: string | Id<"packages"> | undefined;
+  onPackageChange: (value: string) => void;
   onGptIdChange: (value: string) => void;
   onModelChange: (value: string) => void;
   onApiKeyChange: (value: string) => void;
@@ -30,6 +35,8 @@ export function GPTFormCard({
   sanitizedPreview,
   showPreview,
   modelOptions,
+  selectedPackageId,
+  onPackageChange,
   onGptIdChange,
   onModelChange,
   onApiKeyChange,
@@ -37,6 +44,7 @@ export function GPTFormCard({
   onSubmit,
   onReset
 }: GPTFormCardProps) {
+  const packages = useQuery(api.packages.listPackages) ?? [];
   return (
     <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-200">
       <div className="flex items-center justify-between mb-6">
@@ -192,7 +200,6 @@ export function GPTFormCard({
             onChange={(e) => onSystemPromptChange(e.target.value)}
             placeholder="Define the specific behavior and personality of this GPT (default prompt will be prepended)..."
             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent h-40 resize-none"
-            required
           />
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <svg
@@ -213,22 +220,53 @@ export function GPTFormCard({
               : "This prompt guides how the GPT responds to users"}
           </div>
         </div>
+        {/* Package Selector */}
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700">
+            Assign to Package
+          </label>
+          <div className="relative">
+            <select
+              value={selectedPackageId}
+              onChange={(e) => onPackageChange(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 appearance-none bg-white"
+            >
+              <option value="">No Package (Standalone / Admin Only)</option>
+              {packages.map((pkg) => (
+                <option key={pkg._id} value={pkg._id}>
+                  {pkg.name} — {pkg.tier}
+                </option>
+              ))}
+            </select>
+            <div className="absolute right-3 top-3 pointer-events-none text-gray-400">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500">
+            Assigning a package determines which users can see and use this GPT
+            based on their subscription.
+          </p>
+        </div>
 
         {/* Submit Button */}
         <div className="flex gap-3 pt-4">
           <button
             type="submit"
-            disabled={
-              isSubmitting ||
-              !gptIdInput.trim() ||
-              !model.trim() ||
-              !systemPrompt.trim()
-            }
+            disabled={isSubmitting || !gptIdInput.trim() || !model.trim()}
             className={`flex-1 px-6 py-3 rounded-lg font-medium transition-all ${
-              isSubmitting ||
-              !gptIdInput.trim() ||
-              !model.trim() ||
-              !systemPrompt.trim()
+              isSubmitting || !gptIdInput.trim() || !model.trim()
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                 : "bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl"
             }`}

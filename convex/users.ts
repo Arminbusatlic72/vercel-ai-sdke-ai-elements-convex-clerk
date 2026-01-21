@@ -379,22 +379,36 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 
 // --- QUERIES ---
 
+// export const getCurrentUser = query({
+//   args: {},
+//   handler: async (ctx) => {
+//     const identity = await ctx.auth.getUserIdentity();
+//     if (!identity) return null;
+
+//     return await ctx.db
+//       .query("users")
+//       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+//       .first();
+//   }
+// });
+
 export const getCurrentUser = query({
-  args: {},
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
 
-    return await ctx.db
+    const user = await ctx.db
       .query("users")
       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
       .first();
+
+    return user;
   }
 });
-
 export const getByClerkId = query({
   args: { clerkId: v.string() },
   handler: async (ctx, args) => {
@@ -426,21 +440,65 @@ export const getUserSubscription = query({
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-      .first();
+      .unique();
 
     if (!user) return null;
 
+    const subscription = user.subscription;
+    const now = Date.now();
+
+    const isActive =
+      user.role === "admin" ||
+      (subscription &&
+        ["active", "trialing"].includes(subscription.status) &&
+        (!subscription.currentPeriodEnd ||
+          subscription.currentPeriodEnd > now));
+
     return {
-      subscription: user.subscription,
-      aiCredits: user.aiCredits || 0,
-      aiCreditsResetAt: user.aiCreditsResetAt,
-      canCreateProject:
-        user.role === "admin" || user.subscription?.status === "active",
-      plan: user.subscription?.plan || "basic",
-      role: user.role || "user"
+      role: user.role,
+
+      access: {
+        status: subscription?.status ?? "none",
+        isActive,
+        expiresAt: subscription?.currentPeriodEnd
+      },
+
+      limits: {
+        maxGpts: subscription?.maxGpts ?? 0,
+        aiCredits: user.aiCredits ?? 0
+      },
+
+      planLabel: subscription?.plan ?? "none",
+
+      canCreateProject: isActive
     };
   }
 });
+
+// export const getUserSubscription = query({
+//   args: {},
+//   handler: async (ctx) => {
+//     const identity = await ctx.auth.getUserIdentity();
+//     if (!identity) return null;
+
+//     const user = await ctx.db
+//       .query("users")
+//       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+//       .first();
+
+//     if (!user) return null;
+
+//     return {
+//       subscription: user.subscription,
+//       aiCredits: user.aiCredits || 0,
+//       aiCreditsResetAt: user.aiCreditsResetAt,
+//       canCreateProject:
+//         user.role === "admin" || user.subscription?.status === "active",
+//       plan: user.subscription?.plan || "basic",
+//       role: user.role || "user"
+//     };
+//   }
+// });
 
 // Get user by Stripe subscription ID
 export const getByStripeSubscriptionId = query({
@@ -969,5 +1027,346 @@ export const getSubscriptionHistory = query({
       .collect();
 
     return subscriptions;
+  }
+});
+// convex/users.ts - add this query
+
+// export const getUserByClerkId = query({
+//   args: {
+//     clerkId: v.string()
+//   },
+//   handler: async (ctx, { clerkId }) => {
+//     return await ctx.db
+//       .query("users")
+//       .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
+//       .unique();
+//   }
+// });
+
+// Mutation to update user's Stripe customer ID
+export const updateUserStripeCustomerId = mutation({
+  args: {
+    userId: v.id("users"),
+    stripeCustomerId: v.string()
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userId, {
+      stripeCustomerId: args.stripeCustomerId
+    });
+  }
+});
+
+// Mutation to create a new user
+// export const createUser = mutation({
+//   args: {
+//     clerkId: v.string(),
+//     email: v.string(),
+//     name: v.optional(v.string()),
+//     imageUrl: v.optional(v.string()),
+//     stripeCustomerId: v.optional(v.string())
+//   },
+
+//   handler: async (ctx, args) => {
+//     return await ctx.db.insert("users", {
+//       clerkId: args.clerkId,
+//       email: args.email,
+//       name: args.name,
+//       imageUrl: args.imageUrl,
+
+//       role: "user", // ✅ REQUIRED by schema
+
+//       stripeCustomerId: args.stripeCustomerId,
+
+//       // ✅ NO subscription on initial create
+//       // Stripe webhook will add it later
+
+//       createdAt: Date.now(),
+//       updatedAt: Date.now()
+//     });
+//   }
+// });
+
+// export const createUser = mutation({
+//   args: {
+//     clerkId: v.string(),
+//     email: v.string(),
+//     name: v.optional(v.string()),
+//     imageUrl: v.optional(v.string()),
+//     stripeCustomerId: v.optional(v.string()),
+
+//     // ADD THESE
+//     tier: v.optional(v.string()),
+//     maxGpts: v.optional(v.number()),
+//     packageId: v.optional(v.string()),
+//     subscription: v.optional(
+//       v.object({
+//         plan: v.string(),
+//         priceId: v.string(),
+//         status: v.string(),
+//         stripeSubscriptionId: v.string(),
+//         gptIds: v.array(v.string()),
+//         maxGpts: v.number()
+//       })
+//     )
+//   },
+
+//   handler: async (ctx, args) => {
+//     return await ctx.db.insert("users", {
+//       clerkId: args.clerkId,
+//       email: args.email,
+//       name: args.name,
+//       imageUrl: args.imageUrl,
+//       role: "user",
+//       stripeCustomerId: args.stripeCustomerId,
+
+//       // NEW
+//       tier: args.tier || "free",
+//       maxGpts: args.maxGpts || 0,
+//       packageId: args.packageId || null,
+//       subscription: args.subscription || null,
+
+//       createdAt: Date.now(),
+//       updatedAt: Date.now()
+//     });
+//   }
+// });
+
+// Mutation to update user subscription
+// export const updateUserSubscription = mutation({
+//   args: {
+//     clerkUserId: v.string(),
+//     stripeSubscriptionId: v.optional(v.string()),
+//     subscriptionStatus: v.optional(v.string()),
+//     currentPeriodEnd: v.optional(v.string()),
+//     packageId: v.optional(v.union(v.string(), v.null())),
+//     maxGpts: v.optional(v.number()),
+//     tier: v.optional(v.string())
+//   },
+//   handler: async (ctx, args) => {
+//     const user = await ctx.db
+//       .query("users")
+//       .filter((q) => q.eq(q.field("clerkUserId"), args.clerkUserId))
+//       .first();
+
+//     if (!user) {
+//       throw new Error("User not found");
+//     }
+
+//     await ctx.db.patch(user._id, {
+//       stripeSubscriptionId:
+//         args.stripeSubscriptionId || user.stripeSubscriptionId,
+//       subscriptionStatus: args.subscriptionStatus || user.subscriptionStatus,
+//       currentPeriodEnd: args.currentPeriodEnd || user.currentPeriodEnd,
+//       packageId: args.packageId || user.packageId,
+//       maxGpts: args.maxGpts || user.maxGpts,
+//       tier: args.tier || user.tier,
+//       updatedAt: Date.now()
+//     });
+//   }
+// });
+
+// export const updateUserSubscription = mutation({
+//   args: {
+//     clerkId: v.string(),
+//     stripeSubscriptionId: v.optional(v.string()),
+//     subscriptionStatus: v.optional(v.string()),
+//     currentPeriodEnd: v.optional(v.float64()),
+//     packageId: v.optional(v.union(v.string(), v.null())),
+//     maxGpts: v.optional(v.float64()),
+//     tier: v.optional(v.string()),
+//     priceId: v.optional(v.string())
+//   },
+//   handler: async (ctx, args) => {
+//     const user = await ctx.db
+//       .query("users")
+//       .filter((q) => q.eq(q.field("clerkId"), args.clerkId))
+//       .first();
+
+//     if (!user) throw new Error("User not found");
+
+//     await ctx.db.patch(user._id, {
+//       subscription: {
+//         ...user.subscription,
+//         stripeSubscriptionId:
+//           args.stripeSubscriptionId ?? user.subscription?.stripeSubscriptionId,
+//         status:
+//           args.subscriptionStatus ?? user.subscription?.status ?? "active",
+//         currentPeriodEnd:
+//           args.currentPeriodEnd ?? user.subscription?.currentPeriodEnd,
+//         maxGpts: args.maxGpts ?? user.subscription?.maxGpts ?? 0,
+//         plan: args.tier ?? user.subscription?.plan ?? "sandbox",
+//         priceId: args.priceId ?? user.subscription?.priceId ?? ""
+//       },
+//       updatedAt: Date.now()
+//     });
+//   }
+// });
+
+// convex/users.ts
+export const upsertUser = mutation({
+  args: {
+    clerkId: v.string(),
+    email: v.string(),
+    stripeCustomerId: v.string(),
+    stripeSubscriptionId: v.string(),
+    subscriptionStatus: v.string(),
+    priceId: v.string(),
+    maxGpts: v.number(),
+    plan: v.union(
+      v.literal("sandbox"),
+      v.literal("clientProject"),
+      v.literal("basic"),
+      v.literal("pro")
+    ),
+    currentPeriodEnd: v.number()
+  },
+  handler: async (ctx, args) => {
+    // Check if user exists
+    const existingUser = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("clerkId"), args.clerkId))
+      .first();
+
+    const subscription = {
+      stripeSubscriptionId: args.stripeSubscriptionId,
+      status: args.subscriptionStatus,
+      priceId: args.priceId,
+      maxGpts: args.maxGpts,
+      plan: args.plan,
+      gptIds: [] as string[],
+      currentPeriodEnd: args.currentPeriodEnd,
+      cancelAtPeriodEnd: false
+    };
+
+    if (existingUser) {
+      // Update existing user
+      await ctx.db.patch(existingUser._id, {
+        stripeCustomerId: args.stripeCustomerId,
+        subscription: subscription,
+        tier: args.plan, // assuming tier is the same as plan
+        maxGpts: args.maxGpts,
+        updatedAt: Date.now()
+      });
+    } else {
+      // Create new user
+      await ctx.db.insert("users", {
+        clerkId: args.clerkId,
+        email: args.email,
+        stripeCustomerId: args.stripeCustomerId,
+        role: "user",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        aiCredits: 0,
+        aiCreditsResetAt: Date.now(),
+        imageUrl: null,
+        name: null,
+        subscription: subscription,
+        tier: args.plan,
+        maxGpts: args.maxGpts,
+        packageId: null
+      });
+    }
+  }
+});
+// convex/users.ts
+
+export const getUserByClerkId = query({
+  args: { clerkId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+  }
+});
+
+export const createUser = mutation({
+  args: {
+    clerkId: v.string(),
+    email: v.string(),
+    stripeCustomerId: v.optional(v.string())
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    return await ctx.db.insert("users", {
+      clerkId: args.clerkId,
+      email: args.email,
+      role: "user",
+      stripeCustomerId: args.stripeCustomerId,
+      createdAt: now,
+      updatedAt: now
+    });
+  }
+});
+
+export const updateUserSubscription = mutation({
+  args: {
+    clerkId: v.string(),
+    subscriptionData: v.object({
+      stripeSubscriptionId: v.string(),
+      status: v.union(
+        v.literal("active"),
+        v.literal("canceled"),
+        v.literal("past_due"),
+        v.literal("trialing"),
+        v.literal("incomplete"),
+        v.literal("incomplete_expired"),
+        v.literal("unpaid")
+      ),
+      plan: v.union(
+        v.literal("sandbox"),
+        v.literal("clientProject"),
+        v.literal("basic"),
+        v.literal("pro")
+      ),
+      priceId: v.string(),
+      currentPeriodEnd: v.number(),
+      cancelAtPeriodEnd: v.boolean(),
+      maxGpts: v.number(),
+      gptIds: v.array(v.string())
+    })
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    await ctx.db.patch(user._id, {
+      subscription: args.subscriptionData,
+      updatedAt: Date.now()
+    });
+
+    return { success: true };
+  }
+});
+
+// convex/users.ts
+export const updateStripeCustomerId = mutation({
+  args: {
+    clerkId: v.string(),
+    stripeCustomerId: v.string()
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    await ctx.db.patch(user._id, {
+      stripeCustomerId: args.stripeCustomerId,
+      updatedAt: Date.now()
+    });
+
+    return { success: true };
   }
 });

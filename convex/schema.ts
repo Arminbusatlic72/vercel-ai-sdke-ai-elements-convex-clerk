@@ -11,27 +11,6 @@ export default defineSchema({
 
     // ✅ ADD THESE SUBSCRIPTION FIELDS:
     stripeCustomerId: v.optional(v.string()),
-    // In your schema.ts - Update the subscription object
-    // subscription: v.optional(
-    //   v.object({
-    //     status: v.union(
-    //       v.literal("active"),
-    //       v.literal("canceled"),
-    //       v.literal("past_due"),
-    //       v.literal("trialing"),
-    //       v.literal("incomplete"),
-    //       v.literal("incomplete_expired"),
-    //       v.literal("unpaid")
-    //     ),
-    //     stripeSubscriptionId: v.string(),
-    //     plan: v.union(v.literal("basic"), v.literal("pro")),
-    //     priceId: v.string(),
-    //     currentPeriodEnd: v.optional(v.number()), // Already correct
-    //     cancelAtPeriodEnd: v.optional(v.boolean()),
-    //     maxGpts: v.number(),
-    //     gptIds: v.array(v.string())
-    //   })
-    // ),
 
     subscription: v.optional(
       v.object({
@@ -134,6 +113,7 @@ export default defineSchema({
     gptId: v.string(), // "sales", "support", etc.
     model: v.string(),
     apiKey: v.optional(v.string()),
+    packageId: v.optional(v.id("packages")),
     vectorStoreId: v.optional(v.string()),
     pdfFiles: v.optional(
       v.array(
@@ -144,10 +124,12 @@ export default defineSchema({
         })
       )
     ),
-    systemPrompt: v.string(),
+    systemPrompt: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number()
-  }).index("by_gptId", ["gptId"]),
+  })
+    .index("by_gptId", ["gptId"])
+    .index("by_packageId", ["packageId"]),
 
   // ✅ NEW: General Settings Table (single record)
   generalSettings: defineTable({
@@ -157,5 +139,21 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     updatedBy: v.string() // userId of who updated it
-  }).index("by_settingsId", ["settingsId"]) // For fast lookup
+  }).index("by_settingsId", ["settingsId"]), // For fast lookup
+
+  packages: defineTable({
+    key: v.string(), // e.g., "sandbox-summer"
+    name: v.string(), // e.g., "SandBox Summer"
+    stripePriceId: v.string(), // "free_" prefix for free packages
+    description: v.optional(v.string()),
+    maxGpts: v.optional(v.number()),
+    tier: v.string(), // "free", "paid", "trial"
+    durationDays: v.optional(v.number()), // For trial/limited packages
+    priceAmount: v.optional(v.number()), // For paid packages (in cents)
+    recurring: v.optional(v.union(v.literal("monthly"), v.literal("one-time"))),
+    features: v.optional(v.array(v.string()))
+  })
+    .index("by_key", ["key"])
+    .index("by_stripePriceId", ["stripePriceId"])
+    .index("by_tier", ["tier"]) // Add tier index
 });

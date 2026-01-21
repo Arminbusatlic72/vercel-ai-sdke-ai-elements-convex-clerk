@@ -5,7 +5,6 @@ import { Id } from "./_generated/dataModel";
 
 export const createChat = mutation({
   args: {
-    // Remove userId from here since you get it from auth
     title: v.string(),
     projectId: v.optional(v.id("projects")),
     createdAt: v.number(),
@@ -15,6 +14,43 @@ export const createChat = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
+    // 1️⃣ Load user
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) throw new Error("User not found");
+
+    // 2️⃣ If user is admin, allow everything
+    if (user.role === "admin") {
+      return ctx.db.insert("chats", {
+        title,
+        projectId,
+        gptId,
+        userId: identity.subject,
+        createdAt
+      });
+    }
+
+    // 3️⃣ If user has no subscription, block
+    const subscription = user.subscription;
+    if (!subscription) {
+      throw new Error(
+        "No subscription found. Please subscribe to access GPTs."
+      );
+    }
+
+    // 4️⃣ If gptId is provided, ensure it is allowed
+    if (gptId) {
+      const allowedGptIds = subscription.gptIds || [];
+
+      if (!allowedGptIds.includes(gptId)) {
+        throw new Error("You do not have access to this GPT.");
+      }
+    }
+
+    // 5️⃣ Create chat
     return ctx.db.insert("chats", {
       title,
       projectId,
@@ -24,6 +60,28 @@ export const createChat = mutation({
     });
   }
 });
+
+// export const createChat = mutation({
+//   args: {
+//     // Remove userId from here since you get it from auth
+//     title: v.string(),
+//     projectId: v.optional(v.id("projects")),
+//     createdAt: v.number(),
+//     gptId: v.optional(v.string())
+//   },
+//   handler: async (ctx, { title, projectId, createdAt, gptId }) => {
+//     const identity = await ctx.auth.getUserIdentity();
+//     if (!identity) throw new Error("Not authenticated");
+
+//     return ctx.db.insert("chats", {
+//       title,
+//       projectId,
+//       gptId,
+//       userId: identity.subject,
+//       createdAt
+//     });
+//   }
+// });
 
 // export const listChats = query({
 //   args: { projectId: v.optional(v.id("projects")) },

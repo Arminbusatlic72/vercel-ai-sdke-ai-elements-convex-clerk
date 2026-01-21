@@ -301,28 +301,48 @@
 // }
 
 // app/api/stripe-webhook/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { headers } from "next/headers";
+import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const body = await request.text();
-    const headersList = await headers();
-    const signature = headersList.get("stripe-signature") as string;
+    const { userId } = await auth(); // <-- THIS LINE IS REQUIRED
 
-    // Forward to Convex for processing
-    const result = await convex.action(api.stripe.handleStripeWebhook, {
-      signature,
-      rawBody: body
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { stripePaymentMethodId, priceId, email, packageId, tier, maxGpts } =
+      await request.json();
+
+    const result = await convex.action(api.stripe.createSubscription, {
+      clerkUserId: userId,
+      stripePaymentMethodId: stripePaymentMethodId ?? null,
+      priceId,
+      email
+    });
+
+    // UPDATE USER SUBSCRIPTION
+    await convex.mutation(api.users.updateUserSubscription, {
+      clerkId: userId, // correct field name
+      stripeSubscriptionId: result.subscriptionId,
+      subscriptionStatus: result.status,
+      currentPeriodEnd: String(result.currentPeriodEnd),
+      maxGpts: selectedPackage.maxGpts,
+      packageId: selectedPackage._id,
+      tier: selectedPackage.tier
     });
 
     return NextResponse.json(result);
   } catch (error: any) {
-    console.error("Webhook error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("API Error:", error);
+    return NextResponse.json(
+      { error: error.message || "Internal server error" },
+      { status: 500 }
+    );
   }
 }

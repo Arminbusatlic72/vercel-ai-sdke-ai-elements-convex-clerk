@@ -830,6 +830,9 @@ const getStripe = () => {
     apiVersion: "2025-12-15.clover"
   });
 };
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2025-12-15.clover"
+});
 
 // Define your subscription packages
 const SUBSCRIPTION_PACKAGES = {
@@ -882,118 +885,66 @@ const getPackageFromPriceId = (priceId: string) => {
 export const createSubscription = action({
   args: {
     clerkUserId: v.string(),
-    stripePaymentMethodId: v.string(),
+    stripePaymentMethodId: v.union(v.string(), v.null()),
     priceId: v.string(),
     email: v.string()
   },
-  handler: async (ctx, args): Promise<CreateSubscriptionResult> => {
-    const stripe = getStripe();
-
+  handler: async (ctx, args) => {
     try {
-      // 1. Get user from DB
-      const user = await ctx.runQuery(api.users.getByClerkId, {
-        clerkId: args.clerkUserId
+      // Just handle Stripe logic - don't touch your database
+      // Let your API route handle the database updates
+
+      const price = await stripe.prices.retrieve(args.priceId);
+      const isZeroPrice = price.unit_amount === 0;
+
+      // For simplicity, just create the Stripe customer and subscription
+      const customer = await stripe.customers.create({
+        email: args.email,
+        metadata: { clerkUserId: args.clerkUserId }
       });
 
-      if (!user) {
-        throw new Error(`User ${args.clerkUserId} not found`);
-      }
-
-      // 2. Create or retrieve Stripe customer
-      let customerId = user.stripeCustomerId;
-      if (!customerId) {
-        const customer = await stripe.customers.create({
-          email: args.email,
-          metadata: {
-            clerkUserId: args.clerkUserId,
-            convexUserId: user._id
-          }
-        });
-        customerId = customer.id;
-        // We'll update stripeCustomerId in the updateSubscriptionInternal call below
-      }
-
-      // 3. Attach and set default payment method
-      await stripe.paymentMethods.attach(args.stripePaymentMethodId, {
-        customer: customerId
-      });
-
-      await stripe.customers.update(customerId, {
-        invoice_settings: {
-          default_payment_method: args.stripePaymentMethodId
-        }
-      });
-
-      // 4. Get package details
-      const packageDetails = getPackageFromPriceId(args.priceId);
-
-      // 5. Create the subscription
-      const subscriptionParams: Stripe.SubscriptionCreateParams = {
-        customer: customerId,
-        items: [{ price: args.priceId }],
-        payment_behavior: "default_incomplete",
-        payment_settings: {
-          save_default_payment_method: "on_subscription"
-        },
-        expand: ["latest_invoice.payment_intent"],
-        metadata: {
-          clerkUserId: args.clerkUserId,
-          plan: packageDetails.plan
-        }
+      const subscriptionParams: any = {
+        customer: customer.id,
+        items: [{ price: args.priceId }]
       };
 
-      // Add trial for Client Project GPTs
-      if (packageDetails.plan === "clientProject") {
-        subscriptionParams.trial_period_days = 30;
+      if (!isZeroPrice && args.stripePaymentMethodId) {
+        await stripe.paymentMethods.attach(args.stripePaymentMethodId, {
+          customer: customer.id
+        });
+
+        await stripe.customers.update(customer.id, {
+          invoice_settings: {
+            default_payment_method: args.stripePaymentMethodId
+          }
+        });
+
+        subscriptionParams.payment_behavior = "default_incomplete";
+        subscriptionParams.expand = ["latest_invoice.payment_intent"];
+      } else {
+        subscriptionParams.payment_behavior = "default_incomplete";
       }
 
       const subscription =
         await stripe.subscriptions.create(subscriptionParams);
 
-      // 6. Convert Stripe timestamp to milliseconds
-      const currentPeriodEnd = (subscription as any).current_period_end
-        ? (subscription as any).current_period_end * 1000
-        : Date.now() + 30 * 24 * 60 * 60 * 1000;
-
-      // 7. Prepare subscription data for Convex
-      const subscriptionData = {
-        status: subscription.status as SubscriptionStatus,
-        stripeSubscriptionId: subscription.id,
-        plan: packageDetails.plan,
-        priceId: args.priceId,
-        currentPeriodEnd,
-        maxGpts: packageDetails.maxGpts,
-        gptIds: packageDetails.gptIds,
-        cancelAtPeriodEnd: (subscription as any).cancel_at_period_end || false
-      };
-
-      // 8. Update User Record - this will also set stripeCustomerId
-      await ctx.runMutation(internal.users.updateSubscriptionInternal, {
-        clerkId: args.clerkUserId,
-        stripeCustomerId: customerId, // This gets set here
-        subscription: subscriptionData,
-        aiCredits: packageDetails.aiCredits
-      });
-
-      // 9. Extract Payment Intent
-      const latestInvoice = (subscription as any)
-        .latest_invoice as Stripe.Invoice;
-      const paymentIntent =
-        latestInvoice?.payment_intent as Stripe.PaymentIntent;
-
       return {
-        success: true,
         subscriptionId: subscription.id,
-        clientSecret: paymentIntent?.client_secret || null,
-        requiresAction: paymentIntent?.status === "requires_action",
-        status: subscription.status
+        customerId: customer.id,
+        status: subscription.status,
+        clientSecret: (subscription.latest_invoice as any)?.payment_intent
+          ?.client_secret,
+        requiresAction:
+          (subscription.latest_invoice as any)?.payment_intent?.status ===
+          "requires_action"
       };
     } catch (error: any) {
-      console.error("❌ Stripe Error:", error);
-      throw new Error(error.message);
+      console.error("Stripe subscription error:", error);
+      throw new Error(`Stripe error: ${error.message}`);
     }
   }
 });
+
 /**
  * Create a portal session for subscription management
  */

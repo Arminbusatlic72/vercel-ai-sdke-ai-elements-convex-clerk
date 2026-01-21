@@ -1,4 +1,4 @@
-import { Id } from "@/convex/_generated/dataModel";
+import { Doc, Id } from "@/convex/_generated/dataModel";
 
 // SSE Constants
 export const SSE_DATA_PREFIX = "data: " as const;
@@ -6,7 +6,7 @@ export const SSE_DONE_MESSAGE = "[DONE]" as const;
 export const SSE_LINE_DELIMITER = "\n\n" as const;
 
 export type MessageRole = "user" | "assistant";
-
+export type Package = Doc<"packages">;
 export interface Message {
   role: MessageRole;
   content: string;
@@ -75,6 +75,7 @@ export interface GPTConfig {
   apiKey?: string;
   systemPrompt: string;
   vectorStoreId?: string;
+  packageId?: Id<"packages">;
   pdfFiles?: {
     fileName: string;
     openaiFileId: string;

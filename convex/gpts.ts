@@ -1,150 +1,3 @@
-// import { mutation, query } from "./_generated/server";
-// import { v } from "convex/values";
-
-// /**
-//  * Create or update a GPT config by gptId
-//  * (Prevents duplicates)
-//  */
-// export const upsertGpt = mutation({
-//   args: {
-//     gptId: v.string(),
-//     model: v.string(),
-//     apiKey: v.optional(v.string()),
-//     systemPrompt: v.string()
-//   },
-//   handler: async ({ db }, { gptId, model, apiKey, systemPrompt }) => {
-//     const now = Date.now();
-
-//     const existing = await db
-//       .query("gpts")
-//       .withIndex("by_gptId", (q) => q.eq("gptId", gptId))
-//       .first();
-
-//     if (existing) {
-//       await db.patch(existing._id, {
-//         model,
-//         apiKey,
-//         systemPrompt,
-//         updatedAt: now
-//       });
-
-//       return { status: "updated", gptId };
-//     }
-
-//     await db.insert("gpts", {
-//       gptId,
-//       model,
-//       apiKey,
-//       systemPrompt,
-//       createdAt: now,
-//       updatedAt: now
-//     });
-
-//     return { status: "created", gptId };
-//   }
-// });
-
-// /**
-//  * Get a single GPT config (used by API gateway)
-//  */
-// export const getGpt = query({
-//   args: {
-//     gptId: v.string()
-//   },
-//   handler: async ({ db }, { gptId }) => {
-//     return await db
-//       .query("gpts")
-//       .withIndex("by_gptId", (q) => q.eq("gptId", gptId))
-//       .first();
-//   }
-// });
-
-// /**
-//  * List all GPTs (admin dashboard)
-//  */
-// export const listGpts = query({
-//   handler: async ({ db }) => {
-//     return await db.query("gpts").collect();
-//   }
-// });
-
-// /**
-//  * Delete GPT by gptId
-//  */
-// export const deleteGpt = mutation({
-//   args: {
-//     gptId: v.string()
-//   },
-//   handler: async ({ db }, { gptId }) => {
-//     const existing = await db
-//       .query("gpts")
-//       .withIndex("by_gptId", (q) => q.eq("gptId", gptId))
-//       .first();
-
-//     if (!existing) {
-//       throw new Error(`GPT '${gptId}' not found`);
-//     }
-
-//     await db.delete(existing._id);
-//     return { status: "deleted", gptId };
-//   }
-// });
-
-// export const addPdfToGpt = mutation({
-//   args: {
-//     gptId: v.string(),
-//     vectorStoreId: v.string(),
-//     fileName: v.string(),
-//     openaiFileId: v.string()
-//   },
-//   handler: async ({ db }, args) => {
-//     const gpt = await db
-//       .query("gpts")
-//       .withIndex("by_gptId", (q) => q.eq("gptId", args.gptId))
-//       .first();
-
-//     if (!gpt) throw new Error("GPT not found");
-
-//     const pdfFiles = gpt.pdfFiles ?? [];
-
-//     await db.patch(gpt._id, {
-//       vectorStoreId: args.vectorStoreId,
-//       pdfFiles: [
-//         ...pdfFiles,
-//         {
-//           fileName: args.fileName,
-//           openaiFileId: args.openaiFileId,
-//           uploadedAt: Date.now()
-//         }
-//       ],
-//       updatedAt: Date.now()
-//     });
-//   }
-// });
-// // gpts.ts
-// export const removePdfFromGpt = mutation({
-//   args: {
-//     gptId: v.string(),
-//     openaiFileId: v.string()
-//   },
-//   handler: async ({ db }, { gptId, openaiFileId }) => {
-//     const gpt = await db
-//       .query("gpts")
-//       .withIndex("by_gptId", (q) => q.eq("gptId", gptId))
-//       .first();
-
-//     if (!gpt) throw new Error("GPT not found");
-
-//     const updatedFiles = (gpt.pdfFiles || []).filter(
-//       (pdf: any) => pdf.openaiFileId !== openaiFileId
-//     );
-
-//     await db.patch(gpt._id, {
-//       pdfFiles: updatedFiles
-//     });
-//   }
-// });
-
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
@@ -247,42 +100,39 @@ export const upsertGeneralSettings = mutation({
  * Create or update a GPT config by gptId
  * (Prevents duplicates)
  */
+// convex/gpts.ts
+
 export const upsertGpt = mutation({
   args: {
     gptId: v.string(),
     model: v.string(),
+    systemPrompt: v.string(),
     apiKey: v.optional(v.string()),
-    systemPrompt: v.string()
+    // ADD THIS LINE BELOW:
+    packageId: v.optional(v.id("packages"))
   },
-  handler: async ({ db }, { gptId, model, apiKey, systemPrompt }) => {
-    const now = Date.now();
+  handler: async (ctx, args) => {
+    const { gptId, ...fields } = args;
 
-    const existing = await db
+    const existing = await ctx.db
       .query("gpts")
       .withIndex("by_gptId", (q) => q.eq("gptId", gptId))
-      .first();
+      .unique();
 
     if (existing) {
-      await db.patch(existing._id, {
-        model,
-        apiKey,
-        systemPrompt,
-        updatedAt: now
+      await ctx.db.patch(existing._id, {
+        ...fields,
+        updatedAt: Date.now()
       });
-
-      return { status: "updated", gptId };
+      return existing._id;
     }
 
-    await db.insert("gpts", {
+    return await ctx.db.insert("gpts", {
       gptId,
-      model,
-      apiKey,
-      systemPrompt,
-      createdAt: now,
-      updatedAt: now
+      ...fields,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
     });
-
-    return { status: "created", gptId };
   }
 });
 
@@ -438,5 +288,68 @@ export const getGptWithDefaults = query({
       // Include general settings for reference
       generalSettings
     };
+  }
+});
+export const getGPTsForUserPackage = query({
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user || !user.subscription?.plan) return [];
+
+    // Get user's package
+    const userPackage = await ctx.db
+      .query("packages")
+      .withIndex("by_key", (q) => q.eq("key", user.subscription.plan))
+      .first();
+
+    if (!userPackage) return [];
+
+    // Get all GPTs assigned to this package
+    return await ctx.db
+      .query("gpts")
+      .filter((q) => q.eq(q.field("packageId"), userPackage._id))
+      .collect();
+  }
+});
+
+export const getUserGpts = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user || !user.subscription) return [];
+
+    const { status, currentPeriodEnd, gptIds } = user.subscription;
+    const now = Date.now();
+
+    if (
+      !["active", "trialing"].includes(status) ||
+      (currentPeriodEnd && currentPeriodEnd < now)
+    ) {
+      return [];
+    }
+
+    const gpts = await Promise.all(
+      gptIds.map((gptId) =>
+        ctx.db
+          .query("gpts")
+          .withIndex("by_gptId", (q) => q.eq("gptId", gptId))
+          .unique()
+      )
+    );
+
+    return gpts.filter(Boolean);
   }
 });

@@ -207,6 +207,7 @@ type SubscriptionData = {
   aiCreditsResetAt?: number;
   canCreateProject: boolean;
   plan: PlanType;
+  planLabel: string;
   role: "admin" | "user";
 } | null;
 
@@ -262,13 +263,24 @@ export default function DashboardWelcomePage() {
   const { user, isLoaded: isUserLoaded } = useUser();
   const router = useRouter();
   const syncUser = useMutation(api.users.syncCurrentUser);
+  const userGpts = useQuery(api.gpts.getUserGpts);
+  const safeGpts = userGpts?.filter(
+    (gpt): gpt is NonNullable<typeof gpt> => gpt !== null
+  );
+  function gptIdToName(id: string) {
+    return id
+      .replace(/[-_]+/g, " ")
+      .trim()
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  }
 
   // Get subscription data from Convex
   const subscriptionData = useQuery(
     api.users.getUserSubscription,
     {} // No arguments needed for current user
   ) as SubscriptionData;
-
+  const plan = subscriptionData?.planLabel;
+  console.log("Subscription Data:", subscriptionData);
   const [convexUser, setConvexUser] = useState<ConvexUser | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
@@ -373,6 +385,9 @@ export default function DashboardWelcomePage() {
                     <p className="text-sm text-muted-foreground">
                       Role: {subscriptionData?.role?.toUpperCase() || "USER"}
                     </p>
+                    <p className="text-sm text-muted-foreground">
+                      Plan: {plan ? getPlanDisplayName(plan) : "No Plan"}
+                    </p>
                   </div>
 
                   {/* Subscription Status Badge */}
@@ -457,30 +472,17 @@ export default function DashboardWelcomePage() {
                       Your Available GPTs
                     </h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {subscriptionData.subscription.gptIds.map(
-                        (gptId: string) => (
-                          <div
-                            key={gptId}
-                            className="rounded-xl border p-4 hover:bg-muted transition cursor-pointer"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                                <span className="text-blue-600 font-semibold">
-                                  {getGPTHumanName(gptId)}
-                                </span>
-                              </div>
-                              <div>
-                                <h3 className="font-medium">
-                                  {getGPTDisplayName(gptId)}
-                                </h3>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  {getGPTDescription(gptId)}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      )}
+                      {safeGpts?.map((gpt) => (
+                        <div key={gpt._id} className="rounded-xl border p-4">
+                          <h3 className="font-medium">
+                            {gptIdToName(gpt.gptId)}
+                          </h3>
+
+                          {/* <p className="text-xs text-muted-foreground">
+                            {gpt.description ?? "AI assistant"}
+                          </p> */}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
