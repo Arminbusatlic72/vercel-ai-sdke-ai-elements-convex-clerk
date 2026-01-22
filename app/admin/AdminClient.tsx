@@ -27,7 +27,7 @@ const sanitizeGptId = (value: string) => {
 
 export default function AdminClient() {
   // Data fetching
-  const gpts = useQuery(api.gpts.listGpts) ?? [];
+  const gpts = useQuery(api.gpts.listGpts) ?? ([] as GPTConfig[]);
   const generalSettings = useQuery(api.gpts.getGeneralSettings);
   const upsertGpt = useMutation(api.gpts.upsertGpt);
   const deleteGptMutation = useMutation(api.gpts.deleteGpt);
@@ -61,7 +61,9 @@ export default function AdminClient() {
   const [pdfError, setPdfError] = useState<string | null>(null);
 
   // Derived state
+  // const selectedGpt = gpts.find((g) => g.gptId === selectedGptId);
   const selectedGpt = gpts.find((g) => g.gptId === selectedGptId);
+
   const sanitizedPreview = sanitizeGptId(gptIdInput);
   const showPreview = Boolean(gptIdInput && sanitizedPreview !== gptIdInput);
   const modelOptions = [

@@ -1,400 +1,6 @@
-// // convex/users.ts
-// import { v } from "convex/values";
-// import { mutation, query, internalMutation } from "./_generated/server";
-
-// // --- QUERIES ---
-
-// export const getCurrentUser = query({
-//   args: {},
-//   handler: async (ctx) => {
-//     const identity = await ctx.auth.getUserIdentity();
-//     if (!identity) return null;
-
-//     return await ctx.db
-//       .query("users")
-//       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-//       .first();
-//   }
-// });
-
-// export const getByClerkId = query({
-//   args: { clerkId: v.string() },
-//   handler: async (ctx, args) => {
-//     return await ctx.db
-//       .query("users")
-//       .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-//       .first();
-//   }
-// });
-
-// export const getByStripeCustomerId = query({
-//   args: { stripeCustomerId: v.string() },
-//   handler: async (ctx, args) => {
-//     return await ctx.db
-//       .query("users")
-//       .filter((q) => q.eq(q.field("stripeCustomerId"), args.stripeCustomerId))
-//       .collect();
-//   }
-// });
-
-// export const getUserSubscription = query({
-//   args: {},
-//   handler: async (ctx) => {
-//     const identity = await ctx.auth.getUserIdentity();
-//     if (!identity) return null;
-
-//     const user = await ctx.db
-//       .query("users")
-//       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-//       .first();
-
-//     if (!user) return null;
-
-//     return {
-//       subscription: user.subscription,
-//       aiCredits: user.aiCredits || 0,
-//       aiCreditsResetAt: user.aiCreditsResetAt,
-//       canCreateProject:
-//         user.role === "admin" || user.subscription?.status === "active",
-//       plan: user.subscription?.plan,
-//       role: user.role || "user"
-//     };
-//   }
-// });
-
-// // --- MUTATIONS ---
-
-// /**
-//  * Syncs user from Clerk to Convex.
-//  * Called on every login/app load to ensure DB is current.
-//  */
-// // export const syncCurrentUser = mutation({
-// //   args: {},
-// //   handler: async (ctx) => {
-// //     const identity = await ctx.auth.getUserIdentity();
-// //     if (!identity) throw new Error("Not authenticated");
-
-// //     const existingUser = await ctx.db
-// //       .query("users")
-// //       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-// //       .first();
-
-// //     const clerkRole =
-// //       (identity.publicMetadata as { role?: string })?.role === "admin"
-// //         ? "admin"
-// //         : "user";
-// //     const role = existingUser?.role ?? clerkRole;
-
-// //     const userData = {
-// //       email: identity.email ?? existingUser?.email ?? "",
-// //       name: identity.name ?? existingUser?.name,
-// //       imageUrl: identity.pictureUrl ?? existingUser?.imageUrl,
-// //       role: role as "admin" | "user",
-// //       updatedAt: Date.now()
-// //     };
-
-// //     if (existingUser) {
-// //       await ctx.db.patch(existingUser._id, userData);
-// //       // ✅ CHANGE THIS: Fetch and return the full updated user
-// //       return await ctx.db.get(existingUser._id);
-// //     }
-// //     const newUserId = await ctx.db.insert("users", {
-// //       clerkId: identity.subject,
-// //       ...userData,
-// //       aiCredits: 10, // Give them some starter credits
-// //       createdAt: Date.now()
-// //     });
-// //     return await ctx.db.get(newUserId);
-// //   }
-// // });
-
-// export const syncCurrentUser = mutation({
-//   handler: async (ctx) => {
-//     // Get the current user from Clerk via Convex auth
-//     const identity = await ctx.auth.getUserIdentity();
-
-//     if (!identity) {
-//       throw new Error("Not authenticated");
-//     }
-
-//     const clerkId = identity.subject;
-//     const email = identity.email;
-//     const name = identity.name;
-//     const imageUrl = identity.picture;
-
-//     // Check if user already exists
-//     const existingUser = await ctx.db
-//       .query("users")
-//       .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
-//       .first();
-
-//     if (existingUser) {
-//       // Update existing user
-//       await ctx.db.patch(existingUser._id, {
-//         email,
-//         name,
-
-//         updatedAt: Date.now()
-//       });
-//       return existingUser;
-//     } else {
-//       // Create new user
-//       const userId = await ctx.db.insert("users", {
-//         clerkId,
-//         email: email || "",
-//         name,
-
-//         role: "user",
-//         createdAt: Date.now(),
-//         updatedAt: Date.now()
-//       });
-
-//       return await ctx.db.get(userId);
-//     }
-//   }
-// });
-
-// /**
-//  * The Primary Subscription Update Mutation.
-//  * Matches your Schema exactly.
-//  */
-// export const updateSubscription = mutation({
-//   args: {
-//     userId: v.id("users"),
-//     stripeCustomerId: v.string(),
-//     subscription: v.object({
-//       status: v.union(
-//         v.literal("active"),
-//         v.literal("canceled"),
-//         v.literal("past_due"),
-//         v.literal("trialing"),
-//         v.literal("incomplete"),
-//         v.literal("incomplete_expired"),
-//         v.literal("unpaid")
-//       ),
-//       stripeSubscriptionId: v.string(),
-//       plan: v.union(v.literal("basic"), v.literal("pro")),
-//       priceId: v.string(),
-//       currentPeriodEnd: v.number(),
-//       cancelAtPeriodEnd: v.optional(v.boolean()),
-//       maxGpts: v.number(),
-//       gptIds: v.array(v.string())
-//     }),
-//     aiCredits: v.optional(v.number())
-//   },
-//   handler: async (ctx, args) => {
-//     const patchData: any = {
-//       stripeCustomerId: args.stripeCustomerId,
-//       subscription: args.subscription,
-//       updatedAt: Date.now()
-//     };
-
-//     if (args.aiCredits !== undefined) {
-//       patchData.aiCredits = args.aiCredits;
-//     }
-
-//     await ctx.db.patch(args.userId, patchData);
-//   }
-// });
-
-// /**
-//  * AI Credit Manager
-//  * Decrements credits based on usage.
-//  */
-// export const updateAICredits = mutation({
-//   args: { creditsUsed: v.number() },
-//   handler: async (ctx, args) => {
-//     const identity = await ctx.auth.getUserIdentity();
-//     if (!identity) throw new Error("Unauthorized");
-
-//     const user = await ctx.db
-//       .query("users")
-//       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-//       .first();
-
-//     if (!user) throw new Error("User not found");
-
-//     if (user.role !== "admin" && (user.aiCredits || 0) < args.creditsUsed) {
-//       throw new Error("Insufficient AI credits");
-//     }
-
-//     const newCredits = Math.max(0, (user.aiCredits || 0) - args.creditsUsed);
-//     await ctx.db.patch(user._id, {
-//       aiCredits: newCredits,
-//       updatedAt: Date.now()
-//     });
-
-//     return { success: true, remaining: newCredits };
-//   }
-// });
-
-// // --- CRON / INTERNAL ---
-
-// export const resetMonthlyCredits = internalMutation({
-//   args: {},
-//   handler: async (ctx) => {
-//     const users = await ctx.db.query("users").collect();
-//     let resetCount = 0;
-
-//     for (const user of users) {
-//       if (user.subscription?.status === "active") {
-//         const shouldReset =
-//           !user.aiCreditsResetAt || user.aiCreditsResetAt <= Date.now();
-//         if (shouldReset) {
-//           const newCredits = user.subscription.plan === "basic" ? 1000 : 10000;
-//           await ctx.db.patch(user._id, {
-//             aiCredits: newCredits,
-//             aiCreditsResetAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
-//             updatedAt: Date.now()
-//           });
-//           resetCount++;
-//         }
-//       }
-//     }
-//     return { resetCount };
-//   }
-// });
-
-// // convex/users.ts
-// // import { v } from "convex/values";
-// // import { mutation, query, internalMutation } from "./_generated/server";
-
-// // // --- QUERIES ---
-
-// // export const getCurrentUser = query({
-// //   args: {},
-// //   handler: async (ctx) => {
-// //     const identity = await ctx.auth.getUserIdentity();
-// //     if (!identity) return null;
-
-// //     return await ctx.db
-// //       .query("users")
-// //       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-// //       .first();
-// //   }
-// // });
-
-// // // ... (getByClerkId and getByStripeCustomerId remain the same) ...
-
-// // export const getUserSubscription = query({
-// //   args: {},
-// //   handler: async (ctx) => {
-// //     const identity = await ctx.auth.getUserIdentity();
-// //     if (!identity) return null;
-
-// //     const user = await ctx.db
-// //       .query("users")
-// //       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-// //       .first();
-
-// //     if (!user) return null;
-
-// //     return {
-// //       subscription: user.subscription,
-// //       aiCredits: user.aiCredits || 0,
-// //       aiCreditsResetAt: user.aiCreditsResetAt,
-// //       canCreateProject:
-// //         user.role === "admin" || user.subscription?.status === "active",
-// //       // ✅ Fallback for the "plan" and "role"
-// //       plan: user.subscription?.plan || "free",
-// //       role: user.role || "user"
-// //     };
-// //   }
-// // });
-
-// // // --- MUTATIONS ---
-
-// // export const syncCurrentUser = mutation({
-// //   args: {},
-// //   handler: async (ctx) => {
-// //     const identity = await ctx.auth.getUserIdentity();
-// //     if (!identity) throw new Error("Not authenticated");
-
-// //     const existingUser = await ctx.db
-// //       .query("users")
-// //       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-// //       .first();
-
-// //     // ✅ Robust Role Detection
-// //     // Checks Clerk metadata first, then existing DB role, defaults to "user"
-// //     const clerkRole = (identity.publicMetadata as { role?: string })?.role;
-// //     const role =
-// //       existingUser?.role ?? (clerkRole === "admin" ? "admin" : "user");
-
-// //     const userData = {
-// //       email: identity.email ?? existingUser?.email ?? "",
-// //       name: identity.name ?? existingUser?.name ?? "Anonymous",
-// //       imageUrl: identity.pictureUrl ?? existingUser?.imageUrl,
-// //       role: role as "admin" | "user", // Ensure this matches your schema
-// //       updatedAt: Date.now()
-// //     };
-
-// //     if (existingUser) {
-// //       await ctx.db.patch(existingUser._id, userData);
-// //       return existingUser._id;
-// //     }
-
-// //     return await ctx.db.insert("users", {
-// //       clerkId: identity.subject,
-// //       ...userData,
-// //       aiCredits: 10, // ✅ Give new users some starter credits!
-// //       createdAt: Date.now()
-// //     });
-// //   }
-// // });
-
-// // // ... (updateSubscription remains the same) ...
-
-// // export const updateAICredits = mutation({
-// //   args: { creditsUsed: v.number() },
-// //   handler: async (ctx, args) => {
-// //     const identity = await ctx.auth.getUserIdentity();
-// //     if (!identity) throw new Error("Unauthorized");
-
-// //     const user = await ctx.db
-// //       .query("users")
-// //       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-// //       .first();
-
-// //     if (!user) throw new Error("User not found");
-
-// //     // ✅ Admins have infinite credits
-// //     if (user.role === "admin") return { success: true, remaining: Infinity };
-
-// //     if ((user.aiCredits || 0) < args.creditsUsed) {
-// //       throw new Error("Insufficient AI credits");
-// //     }
-
-// //     const newCredits = Math.max(0, (user.aiCredits || 0) - args.creditsUsed);
-// //     await ctx.db.patch(user._id, {
-// //       aiCredits: newCredits,
-// //       updatedAt: Date.now()
-// //     });
-
-// //     return { success: true, remaining: newCredits };
-// //   }
-// // });
-
 // convex/users.ts
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
-import { internal } from "./_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
-
-// --- QUERIES ---
-
-// export const getCurrentUser = query({
-//   args: {},
-//   handler: async (ctx) => {
-//     const identity = await ctx.auth.getUserIdentity();
-//     if (!identity) return null;
-
-//     return await ctx.db
-//       .query("users")
-//       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-//       .first();
-//   }
-// });
 
 export const getCurrentUser = query({
   handler: async (ctx) => {
@@ -409,28 +15,6 @@ export const getCurrentUser = query({
     return user;
   }
 });
-export const getByClerkId = query({
-  args: { clerkId: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-  }
-});
-
-export const getByStripeCustomerId = query({
-  args: { stripeCustomerId: v.string() },
-  handler: async (ctx, args) => {
-    // Since stripeCustomerId isn't indexed, we need to filter
-    const users = await ctx.db
-      .query("users")
-      .filter((q) => q.eq(q.field("stripeCustomerId"), args.stripeCustomerId))
-      .collect();
-    return users.length > 0 ? users[0] : null;
-  }
-});
-
 export const getUserSubscription = query({
   args: {},
   handler: async (ctx) => {
@@ -450,55 +34,36 @@ export const getUserSubscription = query({
     const isActive =
       user.role === "admin" ||
       (subscription &&
-        ["active", "trialing"].includes(subscription.status) &&
+        ["active", "trialing", "incomplete"].includes(subscription.status) &&
         (!subscription.currentPeriodEnd ||
           subscription.currentPeriodEnd > now));
 
+    // Get package name from packages table using stripePriceId
+    let packageName = subscription?.plan ?? "none";
+    if (subscription?.priceId) {
+      const pkg = await ctx.db
+        .query("packages")
+        .withIndex("by_stripePriceId", (q) =>
+          q.eq("stripePriceId", subscription.priceId)
+        )
+        .first();
+
+      if (pkg) {
+        packageName = pkg.name;
+      }
+    }
+
     return {
       role: user.role,
-
-      access: {
-        status: subscription?.status ?? "none",
-        isActive,
-        expiresAt: subscription?.currentPeriodEnd
-      },
-
-      limits: {
-        maxGpts: subscription?.maxGpts ?? 0,
-        aiCredits: user.aiCredits ?? 0
-      },
-
-      planLabel: subscription?.plan ?? "none",
-
-      canCreateProject: isActive
+      subscription: subscription || null,
+      aiCredits: user.aiCredits ?? 0,
+      aiCreditsResetAt: user.aiCreditsResetAt,
+      canCreateProject: isActive,
+      plan: subscription?.plan ?? "none",
+      planLabel: packageName
     };
   }
 });
-
-// export const getUserSubscription = query({
-//   args: {},
-//   handler: async (ctx) => {
-//     const identity = await ctx.auth.getUserIdentity();
-//     if (!identity) return null;
-
-//     const user = await ctx.db
-//       .query("users")
-//       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-//       .first();
-
-//     if (!user) return null;
-
-//     return {
-//       subscription: user.subscription,
-//       aiCredits: user.aiCredits || 0,
-//       aiCreditsResetAt: user.aiCreditsResetAt,
-//       canCreateProject:
-//         user.role === "admin" || user.subscription?.status === "active",
-//       plan: user.subscription?.plan || "basic",
-//       role: user.role || "user"
-//     };
-//   }
-// });
 
 // Get user by Stripe subscription ID
 export const getByStripeSubscriptionId = query({
@@ -573,6 +138,7 @@ export const syncCurrentUser = mutation({
 export const updateSubscription = mutation({
   args: {
     clerkId: v.string(), // Use clerkId for webhook compatibility
+    userId: v.optional(v.id("users")), // Optional userId for direct updates
     stripeCustomerId: v.string(),
     subscription: v.object({
       status: v.union(
@@ -592,6 +158,7 @@ export const updateSubscription = mutation({
         v.literal("clientProject")
       ),
       priceId: v.string(),
+      productName: v.optional(v.string()),
       currentPeriodEnd: v.number(),
       cancelAtPeriodEnd: v.optional(v.boolean()),
       maxGpts: v.number(),
@@ -600,10 +167,16 @@ export const updateSubscription = mutation({
     aiCredits: v.optional(v.number())
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-      .first();
+    // Use provided userId or look up by clerkId
+    let user;
+    if (args.userId) {
+      user = await ctx.db.get(args.userId);
+    } else {
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+        .first();
+    }
 
     if (!user) {
       throw new Error(`User with clerkId ${args.clerkId} not found`);
@@ -638,6 +211,37 @@ export const updateSubscription = mutation({
         args.subscription.status === "canceled" ? Date.now() : undefined
     });
 
+    return { success: true };
+  }
+});
+
+/**
+ * Save Stripe customer ID to user record immediately
+ * Called during subscription creation to enable webhook lookups
+ */
+export const saveStripeCustomerId = mutation({
+  args: {
+    clerkId: v.string(),
+    stripeCustomerId: v.string()
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    if (!user) {
+      throw new Error(`User with clerkId ${args.clerkId} not found`);
+    }
+
+    await ctx.db.patch(user._id, {
+      stripeCustomerId: args.stripeCustomerId,
+      updatedAt: Date.now()
+    });
+
+    console.log(
+      `✅ Saved stripeCustomerId ${args.stripeCustomerId} for user ${args.clerkId}`
+    );
     return { success: true };
   }
 });
@@ -1029,19 +633,6 @@ export const getSubscriptionHistory = query({
     return subscriptions;
   }
 });
-// convex/users.ts - add this query
-
-// export const getUserByClerkId = query({
-//   args: {
-//     clerkId: v.string()
-//   },
-//   handler: async (ctx, { clerkId }) => {
-//     return await ctx.db
-//       .query("users")
-//       .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
-//       .unique();
-//   }
-// });
 
 // Mutation to update user's Stripe customer ID
 export const updateUserStripeCustomerId = mutation({
@@ -1270,35 +861,35 @@ export const upsertUser = mutation({
 });
 // convex/users.ts
 
-export const getUserByClerkId = query({
-  args: { clerkId: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-  }
-});
+// export const getUserByClerkId = query({
+//   args: { clerkId: v.string() },
+//   handler: async (ctx, args) => {
+//     return await ctx.db
+//       .query("users")
+//       .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+//       .first();
+//   }
+// });
 
-export const createUser = mutation({
-  args: {
-    clerkId: v.string(),
-    email: v.string(),
-    stripeCustomerId: v.optional(v.string())
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
+// export const createUser = mutation({
+//   args: {
+//     clerkId: v.string(),
+//     email: v.string(),
+//     stripeCustomerId: v.optional(v.string())
+//   },
+//   handler: async (ctx, args) => {
+//     const now = Date.now();
 
-    return await ctx.db.insert("users", {
-      clerkId: args.clerkId,
-      email: args.email,
-      role: "user",
-      stripeCustomerId: args.stripeCustomerId,
-      createdAt: now,
-      updatedAt: now
-    });
-  }
-});
+//     return await ctx.db.insert("users", {
+//       clerkId: args.clerkId,
+//       email: args.email,
+//       role: "user",
+//       stripeCustomerId: args.stripeCustomerId,
+//       createdAt: now,
+//       updatedAt: now
+//     });
+//   }
+// });
 
 export const updateUserSubscription = mutation({
   args: {
@@ -1347,6 +938,104 @@ export const updateUserSubscription = mutation({
 });
 
 // convex/users.ts
+// export const updateStripeCustomerId = mutation({
+//   args: {
+//     clerkId: v.string(),
+//     stripeCustomerId: v.string()
+//   },
+//   handler: async (ctx, args) => {
+//     const user = await ctx.db
+//       .query("users")
+//       .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+//       .first();
+
+//     if (!user) {
+//       throw new Error("User not found");
+//     }
+
+//     await ctx.db.patch(user._id, {
+//       stripeCustomerId: args.stripeCustomerId,
+//       updatedAt: Date.now()
+//     });
+
+//     return { success: true };
+//   }
+// });
+
+/**
+ * Get user by Stripe Customer ID (for webhooks)
+ */
+export const getUserByStripeCustomerId = query({
+  args: {
+    stripeCustomerId: v.string()
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("stripeCustomerId"), args.stripeCustomerId))
+      .unique();
+  }
+});
+
+/**
+ * Get user by Clerk ID (you probably already have this)
+ */
+export const getUserByClerkId = query({
+  args: {
+    clerkId: v.string()
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+      .unique();
+  }
+});
+
+/**
+ * Create user with Stripe customer ID
+ */
+export const createUser = mutation({
+  args: {
+    clerkId: v.string(),
+    email: v.string(),
+    name: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+    stripeCustomerId: v.optional(v.string())
+  },
+  handler: async (ctx, args) => {
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+      .unique();
+
+    if (existingUser) {
+      // Update with stripe customer ID if provided
+      if (args.stripeCustomerId && !existingUser.stripeCustomerId) {
+        await ctx.db.patch(existingUser._id, {
+          stripeCustomerId: args.stripeCustomerId,
+          updatedAt: Date.now()
+        });
+      }
+      return existingUser._id;
+    }
+
+    return await ctx.db.insert("users", {
+      clerkId: args.clerkId,
+      email: args.email,
+      name: args.name,
+      imageUrl: args.imageUrl,
+      role: "user",
+      stripeCustomerId: args.stripeCustomerId,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+  }
+});
+
+/**
+ * Update user's Stripe customer ID
+ */
 export const updateStripeCustomerId = mutation({
   args: {
     clerkId: v.string(),
@@ -1356,10 +1045,10 @@ export const updateStripeCustomerId = mutation({
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-      .first();
+      .unique();
 
     if (!user) {
-      throw new Error("User not found");
+      throw new Error(`User not found: ${args.clerkId}`);
     }
 
     await ctx.db.patch(user._id, {
@@ -1367,6 +1056,18 @@ export const updateStripeCustomerId = mutation({
       updatedAt: Date.now()
     });
 
-    return { success: true };
+    return user._id;
+  }
+});
+
+export const getByStripeCustomerId = query({
+  args: { stripeCustomerId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_stripeCustomerId", (q) =>
+        q.eq("stripeCustomerId", args.stripeCustomerId)
+      )
+      .collect();
   }
 });

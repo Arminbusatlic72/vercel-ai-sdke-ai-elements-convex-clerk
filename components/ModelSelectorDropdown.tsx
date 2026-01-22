@@ -49,24 +49,14 @@ export default function ModelSelectorDropdown() {
   const userData = useQuery(api.users.getCurrentUser);
   const isAdmin = userData?.role === "admin";
 
-  // Get all packages
-  const allPackages = useQuery(api.packages.listPackages) || [];
+  // Get subscription GPTs (only shows GPTs from user's active subscription)
+  const subscriptionGpts = useQuery(api.packages.getSubscriptionGpts) || [];
 
-  // Get all GPTs
+  // Get all GPTs (for admin only)
   const allGPTs = useQuery(api.gpts.listGpts) || [];
 
-  // Get user's subscription to determine which package they have
-  const userSubscription = userData?.subscription;
-  const userPackage = userSubscription?.plan
-    ? allPackages.find((pkg) => pkg.key === userSubscription.plan)
-    : null;
-
-  // Get GPTs for user's package
-  const packageGPTs = useQuery(api.packages.listGptsForCurrentUser) || [];
-  console.log("Package GPTs:", packageGPTs);
-
-  // If admin, show all GPTs. Otherwise, show only GPTs from user's package
-  const gptsToShow = isAdmin ? allGPTs : packageGPTs;
+  // If admin, show all GPTs. Otherwise, show only GPTs from user's subscription
+  const gptsToShow = isAdmin ? allGPTs : subscriptionGpts;
 
   // Helper to get GPT icon based on ID
   const getGPTIcon = (gptId: string) => {
@@ -117,7 +107,7 @@ export default function ModelSelectorDropdown() {
   };
 
   // Create dynamic links from available GPTs
-  const sourceGpts = isAdmin ? allGPTs : packageGPTs;
+  const sourceGpts = isAdmin ? allGPTs : subscriptionGpts;
 
   const dynamicLinks = sourceGpts.map((gpt) => ({
     id: gpt.gptId,
@@ -161,58 +151,6 @@ export default function ModelSelectorDropdown() {
       .sort((a, b) => b.href.length - a.href.length)
       .find((item) => pathname.startsWith(item.href)) || staticLLMs[0];
 
-  // Get package-specific categories based on current package
-  const getPackageCategories = () => {
-    if (!userPackage) return [];
-
-    // Map package keys to categories
-    const packageCategories = {
-      "sandbox-level": {
-        name: "SandBox Level",
-        description: "12 premium GPTs for advanced AI development",
-        icon: <Rocket className="w-4 h-4" />
-      },
-      "client-project": {
-        name: "Client Project GPTs",
-        description: "Dedicated assistants for client work",
-        icon: <Briefcase className="w-4 h-4" />
-      },
-      "analyzing-trends": {
-        name: "Analyzing Trends",
-        description: "4 specialized trend analysis tools",
-        icon: <TrendingUp className="w-4 h-4" />
-      },
-      "sandbox-summer": {
-        name: "SandBox Summer",
-        description: "3 GPTs for summer semester projects",
-        icon: <Sun className="w-4 h-4" />
-      },
-      "sandbox-workshop": {
-        name: "SandBox Workshop",
-        description: "4 workshop-focused assistants",
-        icon: <School className="w-4 h-4" />
-      },
-      "gpts-classroom": {
-        name: "GPTs Classroom",
-        description: "Educational AI assistant",
-        icon: <BookOpen className="w-4 h-4" />
-      },
-      "speaker-gpt": {
-        name: "Speaker GPT",
-        description: "Public speaking and presentation assistant",
-        icon: <Mic className="w-4 h-4" />
-      },
-      "substack-gpt": {
-        name: "Substack GPT",
-        description: "Content creation and newsletter assistant",
-        icon: <Mail className="w-4 h-4" />
-      }
-    };
-
-    const category = packageCategories[userPackage.key];
-    return category ? [category] : [];
-  };
-
   const renderGroup = (
     label: string,
     items: any[],
@@ -254,8 +192,6 @@ export default function ModelSelectorDropdown() {
     </DropdownMenuGroup>
   );
 
-  const packageCategories = getPackageCategories();
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -290,22 +226,11 @@ export default function ModelSelectorDropdown() {
         {/* Package-Specific GPTs */}
         {dynamicLinks.length > 0 && (
           <>
-            {packageCategories.length > 0
-              ? packageCategories.map((category, index) => (
-                  <div key={index}>
-                    {renderGroup(
-                      category.name,
-                      dynamicLinks,
-                      `${dynamicLinks.length} GPTs available in your plan`,
-                      category.icon
-                    )}
-                  </div>
-                ))
-              : renderGroup(
-                  "Your GPTs",
-                  dynamicLinks,
-                  `${dynamicLinks.length} GPTs available`
-                )}
+            {renderGroup(
+              "Your GPTs",
+              dynamicLinks,
+              `${dynamicLinks.length} GPTs available`
+            )}
 
             <DropdownMenuSeparator className="h-px bg-gray-200" />
           </>
@@ -318,9 +243,7 @@ export default function ModelSelectorDropdown() {
               <Cpu className="w-6 h-6 text-gray-400" />
             </div>
             <p className="text-sm text-gray-600 mb-2">
-              {userPackage
-                ? `No GPTs available in your "${userPackage.name}" plan`
-                : "No subscription plan active"}
+              No subscription plan active
             </p>
             <Link
               href="/subscribe"
@@ -355,63 +278,41 @@ export default function ModelSelectorDropdown() {
         )}
 
         {/* Plan Information */}
-        {userPackage && userSubscription && (
-          <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-gray-700">
-                  {userPackage.name}
-                </p>
-                <p className="text-xs text-gray-500">
-                  {dynamicLinks.length} of {userPackage.maxGpts} GPTs available
-                  {userPackage.tier !== "paid" && ` • ${userPackage.tier}`}
-                </p>
-              </div>
-              <div className="flex flex-col items-end gap-1">
-                {userSubscription.status === "trialing" && (
-                  <span className="text-xs font-medium bg-yellow-100 text-yellow-700 px-2 py-1 rounded">
-                    Trial
-                  </span>
-                )}
-                {userSubscription.status === "active" &&
-                  userPackage.tier === "free" && (
-                    <span className="text-xs font-medium bg-green-100 text-green-700 px-2 py-1 rounded">
-                      Free
-                    </span>
-                  )}
-                {userSubscription.status === "active" &&
-                  userPackage.tier === "paid" && (
+        {userData?.subscription &&
+          userData.subscription.status === "active" && (
+            <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-gray-700">
+                    {userData.subscription.productName || "Active Plan"}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {dynamicLinks.length} GPTs available
+                  </p>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  {userData.subscription.status === "active" && (
                     <span className="text-xs font-medium bg-blue-100 text-blue-700 px-2 py-1 rounded">
                       Active
                     </span>
                   )}
+                </div>
               </div>
+
+              {/* Show subscription end date if applicable */}
+              {userData.subscription.currentPeriodEnd && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Access until:{" "}
+                  {new Date(
+                    userData.subscription.currentPeriodEnd
+                  ).toLocaleDateString()}
+                </p>
+              )}
             </div>
-
-            {/* Show subscription end date if applicable */}
-            {userSubscription.currentPeriodEnd && (
-              <p className="text-xs text-gray-500 mt-2">
-                Access until:{" "}
-                {new Date(
-                  userSubscription.currentPeriodEnd
-                ).toLocaleDateString()}
-              </p>
-            )}
-
-            {/* Show upgrade prompt for free users */}
-            {userPackage.tier === "free" && dynamicLinks.length === 0 && (
-              <Link
-                href="/subscribe"
-                className="mt-2 inline-block text-xs font-medium text-blue-600 hover:text-blue-800"
-              >
-                Upgrade for more GPTs →
-              </Link>
-            )}
-          </div>
-        )}
+          )}
 
         {/* No plan information */}
-        {!userPackage && !isAdmin && (
+        {!userData?.subscription && !isAdmin && (
           <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
             <div className="flex items-center gap-2 mb-1">
               <AlertCircle className="w-4 h-4 text-gray-400" />
@@ -432,7 +333,7 @@ export default function ModelSelectorDropdown() {
         )}
 
         {/* Admin notice */}
-        {isAdmin && !userPackage && (
+        {isAdmin && (
           <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
             <div className="flex items-center gap-2 mb-1">
               <Settings className="w-4 h-4 text-gray-400" />

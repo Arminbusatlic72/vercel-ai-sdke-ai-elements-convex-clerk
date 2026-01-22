@@ -856,25 +856,83 @@ const SUBSCRIPTION_PACKAGES = {
 
 // Helper to get package from price ID
 const getPackageFromPriceId = (priceId: string) => {
-  // Get environment variables for price IDs
-  const sandboxPriceId = process.env.STRIPE_PRICE_SANDBOX_LEVEL_MONTHLY;
-  const clientProjectPriceId =
-    process.env.STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY;
+  // Map price IDs to package keys based on environment variables
+  const priceToKeyMap: Record<string, string> = {
+    [process.env.STRIPE_PRICE_SANDBOX_LEVEL_MONTHLY || ""]: "sandbox-level",
+    [process.env.STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY || ""]:
+      "client-project",
+    [process.env.STRIPE_PRICE_ANALYZING_TRENDS_FREE || ""]: "analyzing-trends",
+    [process.env.STRIPE_PRICE_SUMMER_SANDBOX_FREE || ""]: "sandbox-summer",
+    [process.env.STRIPE_PRICE_WORKSHOP_SANDBOX_FREE || ""]: "sandbox-workshop",
+    [process.env.STRIPE_PRICE_CLASSROOM_SPEAKER_FREE || ""]: "gpts-classroom",
+    [process.env.STRIPE_PRICE_SUBSTACK_GPT_FREE || ""]: "substack-gpt"
+  };
 
-  if (sandboxPriceId && priceId === sandboxPriceId) {
-    return SUBSCRIPTION_PACKAGES.sandbox;
-  } else if (clientProjectPriceId && priceId === clientProjectPriceId) {
-    return SUBSCRIPTION_PACKAGES.clientProject;
+  const packageKey = priceToKeyMap[priceId];
+  if (!packageKey) {
+    throw new Error(
+      `Unknown price ID: ${priceId}. Expected one of: ${Object.keys(
+        priceToKeyMap
+      )
+        .filter((k) => k)
+        .join(", ")}`
+    );
   }
 
-  // Fallback: Try to determine from price ID string
-  if (priceId.includes("sandbox")) {
-    return SUBSCRIPTION_PACKAGES.sandbox;
-  } else if (priceId.includes("client") || priceId.includes("project")) {
-    return SUBSCRIPTION_PACKAGES.clientProject;
+  // Map package keys to plan types and their configurations
+  const packageConfigs: Record<
+    string,
+    { plan: PlanType; maxGpts: number; aiCredits: number }
+  > = {
+    "sandbox-level": {
+      plan: "sandbox",
+      maxGpts: 12,
+      aiCredits: 50000
+    },
+    "client-project": {
+      plan: "clientProject",
+      maxGpts: 1,
+      aiCredits: 1000
+    },
+    "analyzing-trends": {
+      plan: "sandbox",
+      maxGpts: 4,
+      aiCredits: 5000
+    },
+    "sandbox-summer": {
+      plan: "sandbox",
+      maxGpts: 3,
+      aiCredits: 3000
+    },
+    "sandbox-workshop": {
+      plan: "sandbox",
+      maxGpts: 4,
+      aiCredits: 4000
+    },
+    "gpts-classroom": {
+      plan: "sandbox",
+      maxGpts: 1,
+      aiCredits: 1000
+    },
+    "substack-gpt": {
+      plan: "sandbox",
+      maxGpts: 1,
+      aiCredits: 1000
+    }
+  };
+
+  const config = packageConfigs[packageKey];
+  if (!config) {
+    throw new Error(`No configuration found for package: ${packageKey}`);
   }
 
-  throw new Error(`Unknown price ID: ${priceId}`);
+  return {
+    plan: config.plan,
+    maxGpts: config.maxGpts,
+    gptIds: Array.from({ length: config.maxGpts }, (_, i) => `gpt-${i + 1}`),
+    aiCredits: config.aiCredits,
+    packageKey
+  };
 };
 
 /**
@@ -891,21 +949,75 @@ export const createSubscription = action({
   },
   handler: async (ctx, args) => {
     try {
+      // ✅ VALIDATE PRICE ID
+      if (!args.priceId || !args.priceId.startsWith("price_")) {
+        throw new Error(
+          `Invalid price ID: "${args.priceId}". Expected format: price_xxxx (must start with "price_")`
+        );
+      }
+
       // Just handle Stripe logic - don't touch your database
       // Let your API route handle the database updates
 
       const price = await stripe.prices.retrieve(args.priceId);
       const isZeroPrice = price.unit_amount === 0;
 
-      // For simplicity, just create the Stripe customer and subscription
+      // Get package details for metadata
+      let packageDetails;
+      try {
+        packageDetails = getPackageFromPriceId(args.priceId);
+        console.log(
+          `✅ Package mapping found for ${args.priceId}:`,
+          packageDetails
+        );
+      } catch (error: any) {
+        console.error(
+          `❌ Package mapping failed for price ${args.priceId}:`,
+          error.message
+        );
+        console.error(`   Environment variables configured:`);
+        console.error(
+          `   - STRIPE_PRICE_SANDBOX_LEVEL_MONTHLY: ${process.env.STRIPE_PRICE_SANDBOX_LEVEL_MONTHLY ? "✓" : "✗"}`
+        );
+        console.error(
+          `   - STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY: ${process.env.STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY ? "✓" : "✗"}`
+        );
+        console.error(
+          `   - STRIPE_PRICE_ANALYZING_TRENDS_FREE: ${process.env.STRIPE_PRICE_ANALYZING_TRENDS_FREE ? "✓" : "✗"}`
+        );
+        console.error(
+          `   - STRIPE_PRICE_SUMMER_SANDBOX_FREE: ${process.env.STRIPE_PRICE_SUMMER_SANDBOX_FREE ? "✓" : "✗"}`
+        );
+        console.error(
+          `   - STRIPE_PRICE_WORKSHOP_SANDBOX_FREE: ${process.env.STRIPE_PRICE_WORKSHOP_SANDBOX_FREE ? "✓" : "✗"}`
+        );
+        console.error(
+          `   - STRIPE_PRICE_CLASSROOM_SPEAKER_FREE: ${process.env.STRIPE_PRICE_CLASSROOM_SPEAKER_FREE ? "✓" : "✗"}`
+        );
+        console.error(
+          `   - STRIPE_PRICE_SUBSTACK_GPT_FREE: ${process.env.STRIPE_PRICE_SUBSTACK_GPT_FREE ? "✓" : "✗"}`
+        );
+        throw error;
+      }
+
+      // Create the Stripe customer
       const customer = await stripe.customers.create({
         email: args.email,
-        metadata: { clerkUserId: args.clerkUserId }
+        metadata: {
+          clerkUserId: args.clerkUserId,
+          packageKey: packageDetails.packageKey,
+          plan: packageDetails.plan
+        }
       });
 
       const subscriptionParams: any = {
         customer: customer.id,
-        items: [{ price: args.priceId }]
+        items: [{ price: args.priceId }],
+        metadata: {
+          clerkUserId: args.clerkUserId,
+          packageKey: packageDetails.packageKey,
+          plan: packageDetails.plan
+        }
       };
 
       if (!isZeroPrice && args.stripePaymentMethodId) {
@@ -936,7 +1048,10 @@ export const createSubscription = action({
           ?.client_secret,
         requiresAction:
           (subscription.latest_invoice as any)?.payment_intent?.status ===
-          "requires_action"
+          "requires_action",
+        packageKey: packageDetails.packageKey,
+        plan: packageDetails.plan,
+        maxGpts: packageDetails.maxGpts
       };
     } catch (error: any) {
       console.error("Stripe subscription error:", error);
@@ -1135,40 +1250,92 @@ async function handleSubscriptionUpdate(
   ctx: any,
   subscription: Stripe.Subscription
 ) {
-  const customerId = subscription.customer as string;
+  try {
+    const customerId = subscription.customer as string;
 
-  // Find user by Stripe customer ID
-  const user = await ctx.runQuery(api.users.getByStripeCustomerId, {
-    stripeCustomerId: customerId
-  });
+    // Try to get clerkUserId from metadata (highest priority)
+    let clerkUserId = subscription.metadata?.clerkUserId;
 
-  if (!user) {
-    console.error(`User with Stripe customer ID ${customerId} not found`);
-    return;
+    // Fallback: Look up user by Stripe customer ID
+    if (!clerkUserId) {
+      const user = await ctx.runQuery(api.users.getByStripeCustomerId, {
+        stripeCustomerId: customerId
+      });
+      clerkUserId = user?.clerkId;
+    }
+
+    if (!clerkUserId) {
+      console.error(
+        `Could not find clerkUserId for Stripe customer ${customerId}`
+      );
+      return;
+    }
+
+    const price = subscription.items.data[0]?.price;
+    const priceId = price?.id;
+
+    if (!priceId) {
+      console.error("No price ID found in subscription");
+      return;
+    }
+
+    // Get package details from price ID
+    console.log(`🔍 Looking up package for price ID: ${priceId}`);
+    const packageDetails = getPackageFromPriceId(priceId);
+    console.log(`✅ Found package:`, packageDetails);
+
+    // Fetch product name directly from price object
+    let productName: string | null = null;
+    try {
+      const productId = price.product as string;
+      if (productId) {
+        const product = await stripe.products.retrieve(productId);
+        productName = product.name;
+        console.log(`📦 Product name: ${productName}`);
+      }
+    } catch (error) {
+      console.warn(`Could not fetch product name:`, error);
+    }
+
+    const subscriptionData = {
+      status: subscription.status as SubscriptionStatus,
+      stripeSubscriptionId: subscription.id,
+      plan: packageDetails.plan,
+      priceId: priceId,
+      productName: productName || undefined,
+      currentPeriodEnd: (subscription as any).current_period_end
+        ? (subscription as any).current_period_end * 1000
+        : Date.now(),
+      maxGpts: packageDetails.maxGpts,
+      gptIds: packageDetails.gptIds,
+      cancelAtPeriodEnd: (subscription as any).cancel_at_period_end || false
+    };
+
+    console.log(`📝 Subscription data to save:`, subscriptionData);
+
+    // Update user subscription in database
+    const user = await ctx.runQuery(api.users.getByClerkId, {
+      clerkId: clerkUserId
+    });
+
+    if (user) {
+      console.log(`✅ Found user, updating subscription...`);
+      await ctx.runMutation(api.users.updateSubscription, {
+        clerkId: clerkUserId,
+        userId: user._id,
+        stripeCustomerId: customerId,
+        subscription: subscriptionData,
+        aiCredits: packageDetails.aiCredits
+      });
+      console.log(`✅ Subscription updated successfully`);
+    } else {
+      console.error(`❌ User not found with clerkId: ${clerkUserId}`);
+    }
+  } catch (error: any) {
+    console.error(`❌ Error in handleSubscriptionUpdate:`, error.message);
+    console.error(`Stack:`, error.stack);
+    throw error;
   }
-
-  const priceId = subscription.items.data[0]?.price.id;
-  const packageDetails = getPackageFromPriceId(priceId || "");
-
-  const subscriptionData = {
-    status: subscription.status as SubscriptionStatus,
-    stripeSubscriptionId: subscription.id,
-    plan: packageDetails.plan,
-    priceId: priceId || "",
-    currentPeriodEnd: (subscription as any).current_period_end
-      ? (subscription as any).current_period_end * 1000
-      : 0,
-    maxGpts: packageDetails.maxGpts,
-    gptIds: packageDetails.gptIds,
-    cancelAtPeriodEnd: (subscription as any).cancel_at_period_end || false
-  };
-
-  await ctx.runMutation(internal.users.updateSubscriptionInternal, {
-    clerkId: user.clerkId,
-    stripeCustomerId: customerId,
-    subscription: subscriptionData,
-    aiCredits: packageDetails.aiCredits
-  });
 }
 
 /**

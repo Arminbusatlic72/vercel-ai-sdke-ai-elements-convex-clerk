@@ -65,7 +65,7 @@ export default function SidebarGpts({
   selectedGptId?: string;
 }) {
   const [isOpen, setIsOpen] = useState(true);
-  const gpts = useQuery(api.gpts.listGpts) ?? [];
+  const gpts = useQuery(api.packages.getSubscriptionGpts) ?? [];
 
   if (gpts.length === 0) return null;
 

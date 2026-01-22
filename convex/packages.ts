@@ -295,3 +295,138 @@ export const listGptsForCurrentUser = query({
 export const getAllPackages = query(async ({ db }) => {
   return await db.query("packages").collect();
 });
+
+/**
+ * Get package by Stripe Price ID (for webhooks)
+ */
+export const getPackageByPriceId = query({
+  args: {
+    stripePriceId: v.string()
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("packages")
+      .withIndex("by_stripePriceId", (q) =>
+        q.eq("stripePriceId", args.stripePriceId)
+      )
+      .unique();
+  }
+});
+
+/**
+ * Get package by key
+ */
+export const getPackageByKey = query({
+  args: {
+    key: v.string()
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("packages")
+      .withIndex("by_key", (q) => q.eq("key", args.key))
+      .unique();
+  }
+});
+
+/**
+ * Get all packages
+ */
+
+/**
+ * Get packages by tier (free, paid, trial)
+ */
+export const getPackagesByTier = query({
+  args: {
+    tier: v.string()
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("packages")
+      .withIndex("by_tier", (q) => q.eq("tier", args.tier))
+      .collect();
+  }
+});
+
+/**
+ * Get GPTs available to the current logged-in user based on their subscription
+ *
+ * Flow:
+ * 1. Get the current user from Clerk auth
+ * 2. Get user record from database
+ * 3. Check if user has an active subscription with a priceId
+ * 4. Match priceId to a package by stripePriceId
+ * 5. Get all GPTs where packageId matches that package
+ *
+ * Returns: Array of GPTs from the user's subscription package
+ * Returns: Empty array if no active subscription
+ */
+export const getSubscriptionGpts = query({
+  args: {},
+  handler: async (ctx) => {
+    // Step 1: Get current user from Clerk auth
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      console.log("❌ No authenticated user");
+      return [];
+    }
+
+    // Step 2: Get user record from database
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) {
+      console.log(
+        `❌ User not found in database for clerkId: ${identity.subject}`
+      );
+      return [];
+    }
+
+    // Step 3: Check for active subscription with priceId
+    const subscription = user.subscription;
+    if (!subscription || !subscription.priceId) {
+      console.log("❌ User has no active subscription");
+      return [];
+    }
+
+    // Only allow active subscriptions
+    if (subscription.status !== "active") {
+      console.log(
+        `⚠️ Subscription status is ${subscription.status}, not active`
+      );
+      return [];
+    }
+
+    console.log(
+      `✅ User has active subscription with priceId: ${subscription.priceId}`
+    );
+
+    // Step 4: Find the package that matches this priceId
+    const matchedPackage = await ctx.db
+      .query("packages")
+      .withIndex("by_stripePriceId", (q) =>
+        q.eq("stripePriceId", subscription.priceId)
+      )
+      .unique();
+
+    if (!matchedPackage) {
+      console.log(`❌ No package found for priceId: ${subscription.priceId}`);
+      return [];
+    }
+
+    console.log(
+      `✅ Found package: ${matchedPackage.name} (${matchedPackage._id})`
+    );
+
+    // Step 5: Get all GPTs that belong to this package
+    const gpts = await ctx.db
+      .query("gpts")
+      .withIndex("by_packageId", (q) => q.eq("packageId", matchedPackage._id))
+      .collect();
+
+    console.log(`✅ Found ${gpts.length} GPTs for this package`);
+
+    return gpts;
+  }
+});

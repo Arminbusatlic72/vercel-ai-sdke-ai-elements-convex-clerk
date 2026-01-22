@@ -41,11 +41,33 @@ export const createChat = mutation({
       );
     }
 
+    // Only allow active subscriptions
+    if (subscription.status !== "active") {
+      throw new Error(`Subscription is ${subscription.status}, not active`);
+    }
+
     // 4️⃣ If gptId is provided, ensure it is allowed
     if (gptId) {
-      const allowedGptIds = subscription.gptIds || [];
+      // Find the package that matches this subscription's priceId
+      const matchedPackage = await ctx.db
+        .query("packages")
+        .withIndex("by_stripePriceId", (q) =>
+          q.eq("stripePriceId", subscription.priceId)
+        )
+        .unique();
 
-      if (!allowedGptIds.includes(gptId)) {
+      if (!matchedPackage) {
+        throw new Error("Your subscription package was not found.");
+      }
+
+      // Check if this GPT belongs to the user's package
+      const gpt = await ctx.db
+        .query("gpts")
+        .withIndex("by_packageId", (q) => q.eq("packageId", matchedPackage._id))
+        .collect()
+        .then((gpts) => gpts.find((g) => g.gptId === gptId));
+
+      if (!gpt) {
         throw new Error("You do not have access to this GPT.");
       }
     }

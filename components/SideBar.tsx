@@ -60,7 +60,7 @@ export default function Sidebar() {
       selectedProjectId ? { projectId: selectedProjectId } : "skip"
     ) ?? [];
   const globalChats = useQuery(api.chats.listChats, {}) ?? [];
-  const gpts = useQuery(api.gpts.listGpts) ?? [];
+  const gpts = useQuery(api.packages.getSubscriptionGpts) ?? [];
 
   // Mutations
   const createProject = useMutation(api.project.createProject);

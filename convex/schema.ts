@@ -32,6 +32,7 @@ export default defineSchema({
           v.literal("pro")
         ),
         priceId: v.string(),
+        productName: v.optional(v.string()),
         currentPeriodEnd: v.optional(v.number()),
         cancelAtPeriodEnd: v.optional(v.boolean()),
         maxGpts: v.number(),
@@ -48,6 +49,7 @@ export default defineSchema({
   })
     .index("by_clerkId", ["clerkId"])
     .index("by_role", ["role"])
+    .index("by_stripeCustomerId", ["stripeCustomerId"])
     .index("by_subscription_status", ["subscription.status"]), // ✅ New index
 
   // ✅ ADD SUBSCRIPTIONS TABLE for history/audit

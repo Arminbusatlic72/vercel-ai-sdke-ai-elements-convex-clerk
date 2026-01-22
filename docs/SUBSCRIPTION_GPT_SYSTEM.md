@@ -1,0 +1,195 @@
+/\*\*
+
+- SUBSCRIPTION-BASED GPT SELECTION SYSTEM
+-
+- ═══════════════════════════════════════════════════════════════════════════
+-
+- ARCHITECTURE OVERVIEW:
+-
+- User purchases subscription via Stripe
+-         ↓
+- Webhook handler stores subscription in user record:
+- user.subscription = {
+-     status: "active",
+-     priceId: "price_1Srf2783ky3CgDNdJcAcYYQB",
+-     plan: "sandbox",
+-     maxGpts: 4,
+-     ...
+- }
+-         ↓
+- User opens dropdown selector
+-         ↓
+- Frontend calls: api.packages.getSubscriptionGpts()
+-         ↓
+- Backend query executes:
+- 1.  Get current user from Clerk auth
+- 2.  Find user record in database
+- 3.  Extract subscription.priceId
+- 4.  Match priceId to packages table via stripePriceId
+- 5.  Get all GPTs where packageId matches
+- 6.  Return GPT array
+-         ↓
+- Frontend renders GPT options in dropdown
+-
+- ═══════════════════════════════════════════════════════════════════════════
+-
+- DATABASE SCHEMA:
+-
+- packages table:
+- \_id: "k1234567..."
+- name: "Workshop GPTs"
+- stripePriceId: "price_1Srf2783ky3CgDNdJcAcYYQB"
+- maxGpts: 4
+-
+- gpts table:
+- \_id: "k9876543..."
+- gptId: "workshop-1"
+- model: "gpt-4"
+- packageId: "k1234567..." ← Links to packages.\_id
+- systemPrompt: "You are..."
+-
+- users table:
+- clerkId: "user_38Dbw8tGQp8dr1MoBLjy6b7LMFU"
+- subscription: {
+-     status: "active"
+-     priceId: "price_1Srf2783ky3CgDNdJcAcYYQB"  ← Links to packages.stripePriceId
+-     plan: "sandbox"
+-     maxGpts: 4
+- }
+-
+- ═══════════════════════════════════════════════════════════════════════════
+-
+- QUERY FLOW (api.packages.getSubscriptionGpts):
+-
+- Input: (none - uses authenticated user context)
+- Output: Gpt[]
+-
+- Step 1: Auth Check
+- const identity = await ctx.auth.getUserIdentity()
+- Returns: Clerk user identity
+- If null: return []
+-
+- Step 2: Get User
+- const user = db.query("users").withIndex("by_clerkId").first()
+- Returns: User record from Convex
+- If null: return []
+-
+- Step 3: Validate Subscription
+- const subscription = user.subscription
+- If !subscription or !subscription.priceId: return []
+- If subscription.status !== "active": return []
+-
+- Step 4: Match Package
+- const pkg = db.query("packages").withIndex("by_stripePriceId").unique()
+- Matches: packages.stripePriceId === subscription.priceId
+- If null: return []
+-
+- Step 5: Get GPTs
+- const gpts = db.query("gpts").withIndex("by_packageId").collect()
+- Matches: gpts.packageId === pkg.\_id
+- Returns: All GPTs for the package
+-
+- ═══════════════════════════════════════════════════════════════════════════
+-
+- ADMIN WORKFLOW (Setting up GPTs):
+-
+- 1.  Create a package in Convex:
+- {
+-      name: "Workshop GPTs",
+-      stripePriceId: "price_1Srf2783ky3CgDNdJcAcYYQB",
+-      maxGpts: 4,
+-      tier: "free"
+- }
+-
+- 2.  Create GPTs and assign to package:
+- For each GPT:
+- {
+-      gptId: "workshop-1",
+-      model: "gpt-4",
+-      packageId: "k1234567...",  ← packages._id
+-      systemPrompt: "..."
+- }
+-
+- 3.  Create Stripe product and price:
+- Product: "Workshop GPTs"
+- Price: "price_1Srf2783ky3CgDNdJcAcYYQB" (must match stripePriceId)
+-
+- 4.  Set environment variable:
+- STRIPE_PRICE_WORKSHOP_SANDBOX_FREE=price_1Srf2783ky3CgDNdJcAcYYQB
+-
+- Now when users buy this price, they automatically get access to these GPTs!
+-
+- ═══════════════════════════════════════════════════════════════════════════
+-
+- FRONTEND USAGE:
+-
+- Option 1: Use the GptSelector component (pre-built)
+- import { GptSelector } from "@/components/GptSelector"
+-
+- export default function Page() {
+-     return <GptSelector />
+- }
+-
+- Option 2: Use the hook
+- import { useSubscriptionGpts } from "@/components/GptSelector"
+-
+- export default function MyComponent() {
+-     const { gpts, isLoading } = useSubscriptionGpts()
+-
+-     if (isLoading) return <Skeleton />
+-     if (gpts.length === 0) return <p>No GPTs available</p>
+-
+-     return (
+-       <ul>
+-         {gpts.map(gpt => (
+-           <li key={gpt._id}>{gpt.gptId}</li>
+-         ))}
+-       </ul>
+-     )
+- }
+-
+- Option 3: Use the query directly
+- import { useQuery } from "convex/react"
+- import { api } from "@/convex/\_generated/api"
+-
+- const gpts = useQuery(api.packages.getSubscriptionGpts)
+-
+- return gpts?.map(g => <div key={g._id}>{g.gptId}</div>)
+-
+- ═══════════════════════════════════════════════════════════════════════════
+-
+- KEY BENEFITS:
+-
+- ✓ Single source of truth: Users only see GPTs for their package
+- ✓ No Stripe logic in frontend: Package matching happens server-side
+- ✓ Automatic on subscription change: Update subscription → query returns new GPTs
+- ✓ Safe: No way for user to access GPTs they haven't purchased
+- ✓ Efficient: Uses indices for fast lookups (by_clerkId, by_stripePriceId, by_packageId)
+- ✓ Scalable: Works with any number of packages/GPTs
+-
+- ═══════════════════════════════════════════════════════════════════════════
+-
+- TROUBLESHOOTING:
+-
+- Q: User sees "No GPTs available" but should have access
+- A: Check:
+- 1. user.subscription exists and status === "active"
+- 2. user.subscription.priceId matches a packages.stripePriceId
+- 3. At least one GPT has packageId === package.\_id
+- 4. Check Convex logs for debug messages
+-
+- Q: Wrong GPTs showing
+- A: Check that:
+- 1. GPTs are assigned to correct packageId
+- 2. User subscription.priceId is correct
+- 3. Package stripePriceId matches Stripe price ID
+-
+- Q: Query returns empty array even with subscription
+- A: Add logging to see which step fails:
+- - User found?
+- - Subscription exists?
+- - Package matched?
+- - GPTs exist for package?
+    \*/
+
+export {};

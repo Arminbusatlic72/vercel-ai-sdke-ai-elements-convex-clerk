@@ -15,6 +15,30 @@ export async function POST(request: Request) {
 
     const { stripePaymentMethodId, priceId, email } = await request.json();
 
+    // ✅ VALIDATE PRICE ID
+    if (!priceId) {
+      return NextResponse.json({ error: "Missing priceId" }, { status: 400 });
+    }
+
+    if (!priceId.startsWith("price_")) {
+      console.error(
+        `❌ Invalid price ID detected: ${priceId}. Expected format: price_xxxx`
+      );
+      
+      // Check if it looks like a typo
+      if (priceId.includes("rice_")) {
+        console.error(`   This looks like a typo in environment variables or database (rice_ instead of price_).`);
+        console.error(`   Please check .env.local and reseed the packages table.`);
+      }
+      
+      return NextResponse.json(
+        {
+          error: `Invalid price ID: "${priceId}". Expected format: price_xxxx (must start with "price_")`
+        },
+        { status: 400 }
+      );
+    }
+
     // 1️⃣ Create Stripe subscription
     const result = await convex.action(api.stripe.createSubscription, {
       clerkUserId: userId,
@@ -23,7 +47,13 @@ export async function POST(request: Request) {
       email
     });
 
-    // 2️⃣ Ensure user exists (identity ONLY)
+    // 2️⃣ Save stripeCustomerId immediately (enables webhook lookups)
+    await convex.mutation(api.users.saveStripeCustomerId, {
+      clerkId: userId,
+      stripeCustomerId: result.customerId
+    });
+
+    // 3️⃣ Ensure user exists (identity ONLY)
     const user = await convex.query(api.users.getUserByClerkId, {
       clerkId: userId
     });
