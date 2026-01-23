@@ -1,4 +1,4 @@
-import { ModelConfig } from "@/components/AiChat";
+import { ModelConfig } from "@/lib/types";
 
 export const googleModels: readonly ModelConfig[] = [
   { name: "Gemini 2.5 Flash", value: "gemini-2.5-flash", provider: "Google" },
@@ -10,15 +10,33 @@ export const perplexityModels: readonly ModelConfig[] = [
   { name: "Sonar Pro", value: "sonar-pro", provider: "Perplexity" }
 ] as const;
 
+// export const openaiModels: readonly ModelConfig[] = [
+//   { name: "GPT-3.5-turbo", value: "gpt-3.5-turbo", provider: "OpenAI" },
+//   { name: "GPT-4", value: "gpt-4", provider: "OpenAI" },
+//   { name: "GPT-4o", value: "gpt-4o", provider: "OpenAI" },
+//   { name: "GPT-4o Mini", value: "gpt-4o-mini", provider: "OpenAI" },
+//   { name: "GPT-4-turbo", value: "gpt-4-turbo", provider: "OpenAI" },
+
+//   { name: "GPT-5", value: "gpt-5", provider: "OpenAI" },
+//   { name: "GPT-5 Mini", value: "gpt-5-mini", provider: "OpenAI" }
+// ] as const;
+
 export const openaiModels: readonly ModelConfig[] = [
-  { name: "GPT-3.5-turbo", value: "gpt-3.5-turbo", provider: "OpenAI" },
+  { name: "GPT-3.5 Turbo", value: "gpt-3.5-turbo", provider: "OpenAI" },
+
   { name: "GPT-4", value: "gpt-4", provider: "OpenAI" },
+  { name: "GPT-4 Turbo", value: "gpt-4-turbo", provider: "OpenAI" },
+
   { name: "GPT-4o", value: "gpt-4o", provider: "OpenAI" },
   { name: "GPT-4o Mini", value: "gpt-4o-mini", provider: "OpenAI" },
-  { name: "GPT-4-turbo", value: "gpt-4-turbo", provider: "OpenAI" },
+
+  { name: "GPT-4.1", value: "gpt-4.1", provider: "OpenAI" },
+  { name: "GPT-4.1 Mini", value: "gpt-4.1-mini", provider: "OpenAI" },
+  { name: "GPT-4.1 Nano", value: "gpt-4.1-nano", provider: "OpenAI" },
 
   { name: "GPT-5", value: "gpt-5", provider: "OpenAI" },
-  { name: "GPT-5 Mini", value: "gpt-5-mini", provider: "OpenAI" }
+  { name: "GPT-5 Mini", value: "gpt-5-mini", provider: "OpenAI" },
+  { name: "GPT-5 Nano", value: "gpt-5-nano", provider: "OpenAI" }
 ] as const;
 
 export const allModels: readonly ModelConfig[] = [

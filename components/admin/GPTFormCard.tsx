@@ -1,6 +1,7 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
+import { ModelConfig } from "@/lib/types";
 import { LoadingSpinner } from "./LoadingSpinner";
 
 interface GPTFormCardProps {
@@ -13,7 +14,7 @@ interface GPTFormCardProps {
   isSubmitting: boolean;
   sanitizedPreview: string;
   showPreview: boolean;
-  modelOptions: string[];
+  modelOptions: readonly ModelConfig[];
   selectedPackageId: string | Id<"packages"> | undefined;
   onPackageChange: (value: string) => void;
   onGptIdChange: (value: string) => void;
@@ -24,6 +25,11 @@ interface GPTFormCardProps {
   onReset: () => void;
 }
 
+type Package = {
+  _id: Id<"packages">;
+  name: string;
+  tier: string;
+};
 export function GPTFormCard({
   isEditing,
   gptIdInput,
@@ -44,7 +50,9 @@ export function GPTFormCard({
   onSubmit,
   onReset
 }: GPTFormCardProps) {
-  const packages = useQuery(api.packages.listPackages) ?? [];
+  // const packages = useQuery(api.packages.listPackages) ?? [] as Package[];
+  const packages = (useQuery(api.packages.listPackages) ?? []) as Package[];
+
   return (
     <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-200">
       <div className="flex items-center justify-between mb-6">
@@ -124,8 +132,8 @@ export function GPTFormCard({
                 required
               >
                 {modelOptions.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
+                  <option key={opt.value} value={opt.value}>
+                    {opt.name}
                   </option>
                 ))}
               </select>
@@ -268,7 +276,7 @@ export function GPTFormCard({
             className={`flex-1 px-6 py-3 rounded-lg font-medium transition-all ${
               isSubmitting || !gptIdInput.trim() || !model.trim()
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                : "bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl"
+                : "bg-linear-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl"
             }`}
           >
             {isSubmitting ? (

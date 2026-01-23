@@ -7,12 +7,16 @@ interface PackageSelectorProps {
   selectedPackageId?: Id<"packages"> | string;
   onChange: (id: Id<"packages">) => void;
 }
-
+type Package = {
+  _id: Id<"packages">;
+  name: string;
+  tier: string;
+};
 export function PackageSelector({
   selectedPackageId,
   onChange
 }: PackageSelectorProps) {
-  const packages = useQuery(api.packages.listPackages) ?? [];
+  const packages = (useQuery(api.packages.listPackages) ?? []) as Package[];
 
   return (
     <div className="space-y-2">

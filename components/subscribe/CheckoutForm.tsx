@@ -19,10 +19,10 @@ export default function CheckoutForm() {
   const router = useRouter();
 
   // Fetch packages from Convex
-  const packages = useQuery(api.packages.getAllPackages) || [];
+  const packages: Package[] = useQuery(api.packages.getAllPackages) || [];
 
   // Filter and sort packages
-  const activePackages = packages
+  const activePackages: Package[] = packages
     .filter((pkg) => pkg.stripePriceId) // Only packages with Stripe price IDs
     .sort((a, b) => {
       // Sort: paid first (highest price first), then free/trial
@@ -113,23 +113,6 @@ export default function CheckoutForm() {
         if (confirmError) throw new Error(confirmError.message);
       }
 
-      // Update user subscription in Convex
-      // await fetch("/api/update-user-subscription", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({
-      //     clerkUserId: user.id,
-      //     packageId: selectedPackage._id,
-      //     stripeSubscriptionId: result.subscriptionId,
-      //     status: "active",
-      //     maxGpts: selectedPackage.maxGpts,
-      //     tier: selectedPackage.tier,
-      //     expiresAt: new Date(
-      //       Date.now() + 30 * 24 * 60 * 60 * 1000
-      //     ).toISOString() // 30 days
-      //   })
-      // });
-
       setSuccess(true);
       setTimeout(() => router.push("/dashboard?welcome=true"), 2000);
     } catch (err: any) {
@@ -162,7 +145,7 @@ export default function CheckoutForm() {
           maxGpts: selectedPackage.maxGpts,
           tier: selectedPackage.tier,
           trialPeriod:
-            selectedPackage.duration ||
+            selectedPackage.durationDays ||
             (selectedPackage.tier === "trial" ? 30 : undefined)
         })
       });
@@ -173,28 +156,6 @@ export default function CheckoutForm() {
         throw new Error(result.error || "Failed to activate package");
       }
 
-      // Update user's package in Convex
-      // await fetch("/api/update-user-subscription", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({
-      //     clerkUserId: user.id,
-      //     packageId: selectedPackage._id,
-      //     stripeSubscriptionId: result.subscriptionId,
-      //     status: "active",
-      //     maxGpts: selectedPackage.maxGpts,
-      //     tier: selectedPackage.tier,
-      //     expiresAt: selectedPackage.duration
-      //       ? new Date(
-      //           Date.now() +
-      //             (selectedPackage.duration || 30) * 24 * 60 * 60 * 1000
-      //         ).toISOString()
-      //       : undefined
-      //   })
-      // });
-
-      // setSuccess(true);
-      // setTimeout(() => router.push("/dashboard?welcome=true"), 2000);
       setSuccess(true);
       router.push("/dashboard?welcome=true");
     } catch (err: any) {

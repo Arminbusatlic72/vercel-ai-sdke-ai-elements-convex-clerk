@@ -290,6 +290,34 @@ export const getGptWithDefaults = query({
     };
   }
 });
+// export const getGPTsForUserPackage = query({
+//   handler: async (ctx) => {
+//     const identity = await ctx.auth.getUserIdentity();
+//     if (!identity) return [];
+
+//     const user = await ctx.db
+//       .query("users")
+//       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+//       .first();
+
+//     if (!user || !user.subscription?.plan) return [];
+
+//     // Get user's package
+//     const userPackage = await ctx.db
+//       .query("packages")
+//       .withIndex("by_key", (q) => q.eq("key", user.subscription.plan))
+//       .first();
+
+//     if (!userPackage) return [];
+
+//     // Get all GPTs assigned to this package
+//     return await ctx.db
+//       .query("gpts")
+//       .filter((q) => q.eq(q.field("packageId"), userPackage._id))
+//       .collect();
+//   }
+// });
+
 export const getGPTsForUserPackage = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -300,17 +328,17 @@ export const getGPTsForUserPackage = query({
       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
       .first();
 
-    if (!user || !user.subscription?.plan) return [];
+    if (!user || !user.subscription) return [];
 
-    // Get user's package
+    const plan = user.subscription.plan;
+
     const userPackage = await ctx.db
       .query("packages")
-      .withIndex("by_key", (q) => q.eq("key", user.subscription.plan))
+      .withIndex("by_key", (q) => q.eq("key", plan))
       .first();
 
     if (!userPackage) return [];
 
-    // Get all GPTs assigned to this package
     return await ctx.db
       .query("gpts")
       .filter((q) => q.eq(q.field("packageId"), userPackage._id))

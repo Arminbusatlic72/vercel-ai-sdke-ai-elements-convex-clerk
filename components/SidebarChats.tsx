@@ -6,7 +6,7 @@ import { Search, ChevronDown, MessageSquare, X, Loader2 } from "lucide-react";
 import ChatRow from "./ChatRow";
 import { cn } from "@/lib/utils";
 import { useChatSearch } from "@/lib/hooks/useChatSearch";
-
+import { ChatType } from "./ChatRow";
 type ChatId = Id<"chats">;
 
 interface SidebarChatsProps {
@@ -34,7 +34,8 @@ export default function SidebarChats({
     hasSearchQuery
   } = useChatSearch({ projectId });
 
-  const displayChats = chats || [];
+  const displayChats: ChatType[] = chats || [];
+
   const totalChatsCount = displayChats.length;
 
   const handleToggleDropdown = () => {

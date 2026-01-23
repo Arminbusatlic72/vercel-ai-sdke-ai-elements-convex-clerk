@@ -104,10 +104,21 @@ export const syncCurrentUser = mutation({
     const role =
       existingUser?.role ?? (clerkRole === "admin" ? "admin" : "user");
 
+    // const userData = {
+    //   email: identity.email ?? existingUser?.email ?? "",
+    //   name: identity.name ?? existingUser?.name ?? "Anonymous",
+    //   imageUrl: identity.picture ?? existingUser?.imageUrl,
+    //   role: role as "admin" | "user",
+    //   updatedAt: Date.now()
+    // };
+
     const userData = {
       email: identity.email ?? existingUser?.email ?? "",
       name: identity.name ?? existingUser?.name ?? "Anonymous",
-      imageUrl: identity.picture ?? existingUser?.imageUrl,
+      imageUrl:
+        typeof identity.picture === "string"
+          ? identity.picture
+          : existingUser?.imageUrl,
       role: role as "admin" | "user",
       updatedAt: Date.now()
     };
@@ -794,71 +805,71 @@ export const updateUserStripeCustomerId = mutation({
 // });
 
 // convex/users.ts
-export const upsertUser = mutation({
-  args: {
-    clerkId: v.string(),
-    email: v.string(),
-    stripeCustomerId: v.string(),
-    stripeSubscriptionId: v.string(),
-    subscriptionStatus: v.string(),
-    priceId: v.string(),
-    maxGpts: v.number(),
-    plan: v.union(
-      v.literal("sandbox"),
-      v.literal("clientProject"),
-      v.literal("basic"),
-      v.literal("pro")
-    ),
-    currentPeriodEnd: v.number()
-  },
-  handler: async (ctx, args) => {
-    // Check if user exists
-    const existingUser = await ctx.db
-      .query("users")
-      .filter((q) => q.eq(q.field("clerkId"), args.clerkId))
-      .first();
+// export const upsertUser = mutation({
+//   args: {
+//     clerkId: v.string(),
+//     email: v.string(),
+//     stripeCustomerId: v.string(),
+//     stripeSubscriptionId: v.string(),
+//     subscriptionStatus: v.string(),
+//     priceId: v.string(),
+//     maxGpts: v.number(),
+//     plan: v.union(
+//       v.literal("sandbox"),
+//       v.literal("clientProject"),
+//       v.literal("basic"),
+//       v.literal("pro")
+//     ),
+//     currentPeriodEnd: v.number()
+//   },
+//   handler: async (ctx, args) => {
+//     // Check if user exists
+//     const existingUser = await ctx.db
+//       .query("users")
+//       .filter((q) => q.eq(q.field("clerkId"), args.clerkId))
+//       .first();
 
-    const subscription = {
-      stripeSubscriptionId: args.stripeSubscriptionId,
-      status: args.subscriptionStatus,
-      priceId: args.priceId,
-      maxGpts: args.maxGpts,
-      plan: args.plan,
-      gptIds: [] as string[],
-      currentPeriodEnd: args.currentPeriodEnd,
-      cancelAtPeriodEnd: false
-    };
+//     const subscription = {
+//       stripeSubscriptionId: args.stripeSubscriptionId,
+//       status: args.subscriptionStatus,
+//       priceId: args.priceId,
+//       maxGpts: args.maxGpts,
+//       plan: args.plan,
+//       gptIds: [] as string[],
+//       currentPeriodEnd: args.currentPeriodEnd,
+//       cancelAtPeriodEnd: false
+//     };
 
-    if (existingUser) {
-      // Update existing user
-      await ctx.db.patch(existingUser._id, {
-        stripeCustomerId: args.stripeCustomerId,
-        subscription: subscription,
-        tier: args.plan, // assuming tier is the same as plan
-        maxGpts: args.maxGpts,
-        updatedAt: Date.now()
-      });
-    } else {
-      // Create new user
-      await ctx.db.insert("users", {
-        clerkId: args.clerkId,
-        email: args.email,
-        stripeCustomerId: args.stripeCustomerId,
-        role: "user",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        aiCredits: 0,
-        aiCreditsResetAt: Date.now(),
-        imageUrl: null,
-        name: null,
-        subscription: subscription,
-        tier: args.plan,
-        maxGpts: args.maxGpts,
-        packageId: null
-      });
-    }
-  }
-});
+//     if (existingUser) {
+//       // Update existing user
+//       await ctx.db.patch(existingUser._id, {
+//         stripeCustomerId: args.stripeCustomerId,
+//         subscription: subscription,
+//         tier: args.plan, // assuming tier is the same as plan
+//         maxGpts: args.maxGpts,
+//         updatedAt: Date.now()
+//       });
+//     } else {
+//       // Create new user
+//       await ctx.db.insert("users", {
+//         clerkId: args.clerkId,
+//         email: args.email,
+//         stripeCustomerId: args.stripeCustomerId,
+//         role: "user",
+//         createdAt: Date.now(),
+//         updatedAt: Date.now(),
+//         aiCredits: 0,
+//         aiCreditsResetAt: Date.now(),
+//         imageUrl: null,
+//         name: null,
+//         subscription: subscription,
+//         tier: args.plan,
+//         maxGpts: args.maxGpts,
+//         packageId: null
+//       });
+//     }
+//   }
+// });
 // convex/users.ts
 
 // export const getUserByClerkId = query({

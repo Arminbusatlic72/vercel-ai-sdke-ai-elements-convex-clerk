@@ -21,7 +21,7 @@ import {
   Zap,
   Rocket
 } from "lucide-react";
-
+import { GPTConfig } from "@/lib/types";
 const cards = [
   {
     title: "Start a Chat",
@@ -48,7 +48,8 @@ type ConvexUser = {
       | "trialing"
       | "incomplete"
       | "incomplete_expired"
-      | "unpaid";
+      | "unpaid"
+      | "paused";
     plan: PlanType;
     maxGpts: number;
     gptIds: string[];
@@ -130,7 +131,7 @@ export default function DashboardWelcomePage() {
   const { user, isLoaded: isUserLoaded } = useUser();
   const router = useRouter();
   const syncUser = useMutation(api.users.syncCurrentUser);
-  const userGpts = useQuery(api.gpts.getUserGpts);
+  const userGpts = useQuery(api.gpts.getUserGpts) as GPTConfig[] | undefined;
   const safeGpts = userGpts?.filter(
     (gpt): gpt is NonNullable<typeof gpt> => gpt !== null
   );
@@ -375,13 +376,13 @@ export default function DashboardWelcomePage() {
                     </h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {safeGpts?.map((gpt) => (
-                        <div key={gpt._id} className="rounded-xl border p-4">
+                        <div key={gpt.gptId} className="rounded-xl border p-4">
                           <h3 className="font-medium">
                             {gptIdToName(gpt.gptId)}
                           </h3>
 
                           {/* <p className="text-xs text-muted-foreground">
-                            {gpt.description ?? "AI assistant"}
+                            {gpt. ?? "AI assistant"}
                           </p> */}
                         </div>
                       ))}
@@ -514,8 +515,7 @@ export default function DashboardWelcomePage() {
                             )}{" "}
                             trial ends on{" "}
                             {new Date(
-                              subscriptionData.subscription.currentPeriodEnd ||
-                                Date.now()
+                              subscriptionData.subscription.plan || Date.now()
                             ).toLocaleDateString()}
                             . After the trial, your subscription will
                             automatically convert to a paid plan.

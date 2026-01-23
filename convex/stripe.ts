@@ -940,6 +940,126 @@ const getPackageFromPriceId = (priceId: string) => {
  * Handles Customer creation, Payment Method attachment, and Subscription initialization.
  */
 // In createSubscription action - FIXED VERSION
+// export const createSubscription = action({
+//   args: {
+//     clerkUserId: v.string(),
+//     stripePaymentMethodId: v.union(v.string(), v.null()),
+//     priceId: v.string(),
+//     email: v.string()
+//   },
+//   handler: async (ctx, args) => {
+//     try {
+//       // ✅ VALIDATE PRICE ID
+//       if (!args.priceId || !args.priceId.startsWith("price_")) {
+//         throw new Error(
+//           `Invalid price ID: "${args.priceId}". Expected format: price_xxxx (must start with "price_")`
+//         );
+//       }
+
+//       // Just handle Stripe logic - don't touch your database
+//       // Let your API route handle the database updates
+
+//       const price = await stripe.prices.retrieve(args.priceId);
+//       const isZeroPrice = price.unit_amount === 0;
+
+//       // Get package details for metadata
+//       let packageDetails;
+//       try {
+//         packageDetails = getPackageFromPriceId(args.priceId);
+//         console.log(
+//           `✅ Package mapping found for ${args.priceId}:`,
+//           packageDetails
+//         );
+//       } catch (error: any) {
+//         console.error(
+//           `❌ Package mapping failed for price ${args.priceId}:`,
+//           error.message
+//         );
+//         console.error(`   Environment variables configured:`);
+//         console.error(
+//           `   - STRIPE_PRICE_SANDBOX_LEVEL_MONTHLY: ${process.env.STRIPE_PRICE_SANDBOX_LEVEL_MONTHLY ? "✓" : "✗"}`
+//         );
+//         console.error(
+//           `   - STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY: ${process.env.STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY ? "✓" : "✗"}`
+//         );
+//         console.error(
+//           `   - STRIPE_PRICE_ANALYZING_TRENDS_FREE: ${process.env.STRIPE_PRICE_ANALYZING_TRENDS_FREE ? "✓" : "✗"}`
+//         );
+//         console.error(
+//           `   - STRIPE_PRICE_SUMMER_SANDBOX_FREE: ${process.env.STRIPE_PRICE_SUMMER_SANDBOX_FREE ? "✓" : "✗"}`
+//         );
+//         console.error(
+//           `   - STRIPE_PRICE_WORKSHOP_SANDBOX_FREE: ${process.env.STRIPE_PRICE_WORKSHOP_SANDBOX_FREE ? "✓" : "✗"}`
+//         );
+//         console.error(
+//           `   - STRIPE_PRICE_CLASSROOM_SPEAKER_FREE: ${process.env.STRIPE_PRICE_CLASSROOM_SPEAKER_FREE ? "✓" : "✗"}`
+//         );
+//         console.error(
+//           `   - STRIPE_PRICE_SUBSTACK_GPT_FREE: ${process.env.STRIPE_PRICE_SUBSTACK_GPT_FREE ? "✓" : "✗"}`
+//         );
+//         throw error;
+//       }
+
+//       // Create the Stripe customer
+//       const customer = await stripe.customers.create({
+//         email: args.email,
+//         metadata: {
+//           clerkUserId: args.clerkUserId,
+//           packageKey: packageDetails.packageKey,
+//           plan: packageDetails.plan
+//         }
+//       });
+
+//       const subscriptionParams: any = {
+//         customer: customer.id,
+//         items: [{ price: args.priceId }],
+//         metadata: {
+//           clerkUserId: args.clerkUserId,
+//           packageKey: packageDetails.packageKey,
+//           plan: packageDetails.plan
+//         }
+//       };
+
+//       if (!isZeroPrice && args.stripePaymentMethodId) {
+//         await stripe.paymentMethods.attach(args.stripePaymentMethodId, {
+//           customer: customer.id
+//         });
+
+//         await stripe.customers.update(customer.id, {
+//           invoice_settings: {
+//             default_payment_method: args.stripePaymentMethodId
+//           }
+//         });
+
+//         subscriptionParams.payment_behavior = "default_incomplete";
+//         subscriptionParams.expand = ["latest_invoice.payment_intent"];
+//       } else {
+//         subscriptionParams.payment_behavior = "default_incomplete";
+//       }
+
+//       const subscription =
+//         await stripe.subscriptions.create(subscriptionParams);
+
+//       return {
+//         subscriptionId: subscription.id,
+//         customerId: customer.id,
+//         status: subscription.status,
+//         clientSecret: (subscription.latest_invoice as any)?.payment_intent
+//           ?.client_secret,
+//         requiresAction:
+//           (subscription.latest_invoice as any)?.payment_intent?.status ===
+//           "requires_action",
+//         packageKey: packageDetails.packageKey,
+//         plan: packageDetails.plan,
+//         maxGpts: packageDetails.maxGpts
+//       };
+//     } catch (error: any) {
+//       console.error("Stripe subscription error:", error);
+//       throw new Error(`Stripe error: ${error.message}`);
+//     }
+//   }
+// });
+
 export const createSubscription = action({
   args: {
     clerkUserId: v.string(),
@@ -947,61 +1067,45 @@ export const createSubscription = action({
     priceId: v.string(),
     email: v.string()
   },
-  handler: async (ctx, args) => {
-    try {
-      // ✅ VALIDATE PRICE ID
-      if (!args.priceId || !args.priceId.startsWith("price_")) {
-        throw new Error(
-          `Invalid price ID: "${args.priceId}". Expected format: price_xxxx (must start with "price_")`
-        );
-      }
+  handler: async (_ctx, args) => {
+    // ─────────────────────────────────────────────
+    // 1️⃣ Validate price ID
+    // ─────────────────────────────────────────────
+    if (!args.priceId.startsWith("price_")) {
+      throw new Error(`Invalid priceId: ${args.priceId}`);
+    }
 
-      // Just handle Stripe logic - don't touch your database
-      // Let your API route handle the database updates
+    // ─────────────────────────────────────────────
+    // 2️⃣ Load price + package mapping
+    // ─────────────────────────────────────────────
+    const price = await stripe.prices.retrieve(args.priceId);
+    const isFree = price.unit_amount === 0;
 
-      const price = await stripe.prices.retrieve(args.priceId);
-      const isZeroPrice = price.unit_amount === 0;
+    const packageDetails = getPackageFromPriceId(args.priceId);
 
-      // Get package details for metadata
-      let packageDetails;
-      try {
-        packageDetails = getPackageFromPriceId(args.priceId);
-        console.log(
-          `✅ Package mapping found for ${args.priceId}:`,
-          packageDetails
-        );
-      } catch (error: any) {
-        console.error(
-          `❌ Package mapping failed for price ${args.priceId}:`,
-          error.message
-        );
-        console.error(`   Environment variables configured:`);
-        console.error(
-          `   - STRIPE_PRICE_SANDBOX_LEVEL_MONTHLY: ${process.env.STRIPE_PRICE_SANDBOX_LEVEL_MONTHLY ? "✓" : "✗"}`
-        );
-        console.error(
-          `   - STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY: ${process.env.STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY ? "✓" : "✗"}`
-        );
-        console.error(
-          `   - STRIPE_PRICE_ANALYZING_TRENDS_FREE: ${process.env.STRIPE_PRICE_ANALYZING_TRENDS_FREE ? "✓" : "✗"}`
-        );
-        console.error(
-          `   - STRIPE_PRICE_SUMMER_SANDBOX_FREE: ${process.env.STRIPE_PRICE_SUMMER_SANDBOX_FREE ? "✓" : "✗"}`
-        );
-        console.error(
-          `   - STRIPE_PRICE_WORKSHOP_SANDBOX_FREE: ${process.env.STRIPE_PRICE_WORKSHOP_SANDBOX_FREE ? "✓" : "✗"}`
-        );
-        console.error(
-          `   - STRIPE_PRICE_CLASSROOM_SPEAKER_FREE: ${process.env.STRIPE_PRICE_CLASSROOM_SPEAKER_FREE ? "✓" : "✗"}`
-        );
-        console.error(
-          `   - STRIPE_PRICE_SUBSTACK_GPT_FREE: ${process.env.STRIPE_PRICE_SUBSTACK_GPT_FREE ? "✓" : "✗"}`
-        );
-        throw error;
-      }
+    // ─────────────────────────────────────────────
+    // 3️⃣ Find or create Stripe customer (CRITICAL)
+    // ─────────────────────────────────────────────
+    const existingCustomers = await stripe.customers.search({
+      query: `metadata['clerkUserId']:'${args.clerkUserId}'`,
+      limit: 1
+    });
 
-      // Create the Stripe customer
-      const customer = await stripe.customers.create({
+    let customer: Stripe.Customer;
+
+    if (existingCustomers.data.length > 0) {
+      customer = existingCustomers.data[0];
+
+      // Ensure metadata stays correct
+      await stripe.customers.update(customer.id, {
+        metadata: {
+          clerkUserId: args.clerkUserId,
+          packageKey: packageDetails.packageKey,
+          plan: packageDetails.plan
+        }
+      });
+    } else {
+      customer = await stripe.customers.create({
         email: args.email,
         metadata: {
           clerkUserId: args.clerkUserId,
@@ -1009,93 +1113,133 @@ export const createSubscription = action({
           plan: packageDetails.plan
         }
       });
+    }
 
-      const subscriptionParams: any = {
-        customer: customer.id,
-        items: [{ price: args.priceId }],
-        metadata: {
-          clerkUserId: args.clerkUserId,
-          packageKey: packageDetails.packageKey,
-          plan: packageDetails.plan
-        }
-      };
+    // ─────────────────────────────────────────────
+    // 4️⃣ Prepare subscription params
+    // ─────────────────────────────────────────────
+    const subscriptionParams: Stripe.SubscriptionCreateParams = {
+      customer: customer.id,
+      items: [{ price: args.priceId }],
+      metadata: {
+        clerkUserId: args.clerkUserId,
+        packageKey: packageDetails.packageKey,
+        plan: packageDetails.plan
+      }
+    };
 
-      if (!isZeroPrice && args.stripePaymentMethodId) {
-        await stripe.paymentMethods.attach(args.stripePaymentMethodId, {
-          customer: customer.id
-        });
-
-        await stripe.customers.update(customer.id, {
-          invoice_settings: {
-            default_payment_method: args.stripePaymentMethodId
-          }
-        });
-
-        subscriptionParams.payment_behavior = "default_incomplete";
-        subscriptionParams.expand = ["latest_invoice.payment_intent"];
-      } else {
-        subscriptionParams.payment_behavior = "default_incomplete";
+    // ─────────────────────────────────────────────
+    // 5️⃣ Paid vs Free logic (IMPORTANT)
+    // ─────────────────────────────────────────────
+    if (isFree) {
+      // ✅ Free plans become ACTIVE immediately
+      subscriptionParams.payment_behavior = "allow_incomplete";
+    } else {
+      if (!args.stripePaymentMethodId) {
+        throw new Error("Payment method required for paid subscription");
       }
 
-      const subscription =
-        await stripe.subscriptions.create(subscriptionParams);
+      await stripe.paymentMethods.attach(args.stripePaymentMethodId, {
+        customer: customer.id
+      });
 
-      return {
-        subscriptionId: subscription.id,
-        customerId: customer.id,
-        status: subscription.status,
-        clientSecret: (subscription.latest_invoice as any)?.payment_intent
-          ?.client_secret,
-        requiresAction:
-          (subscription.latest_invoice as any)?.payment_intent?.status ===
-          "requires_action",
-        packageKey: packageDetails.packageKey,
-        plan: packageDetails.plan,
-        maxGpts: packageDetails.maxGpts
-      };
-    } catch (error: any) {
-      console.error("Stripe subscription error:", error);
-      throw new Error(`Stripe error: ${error.message}`);
+      await stripe.customers.update(customer.id, {
+        invoice_settings: {
+          default_payment_method: args.stripePaymentMethodId
+        }
+      });
+
+      subscriptionParams.payment_behavior = "default_incomplete";
+      subscriptionParams.expand = ["latest_invoice.payment_intent"];
     }
+
+    // ─────────────────────────────────────────────
+    // 6️⃣ Create subscription
+    // ─────────────────────────────────────────────
+    type ExpandedInvoice = Stripe.Invoice & {
+      payment_intent?: Stripe.PaymentIntent | null;
+    };
+
+    const subscription = await stripe.subscriptions.create({
+      ...subscriptionParams,
+      expand: ["latest_invoice.payment_intent"]
+    });
+
+    let paymentIntent: Stripe.PaymentIntent | null = null;
+
+    const latestInvoice = subscription.latest_invoice;
+
+    if (latestInvoice && typeof latestInvoice !== "string") {
+      const invoice = latestInvoice as ExpandedInvoice;
+      paymentIntent = invoice.payment_intent ?? null;
+    }
+
+    // ─────────────────────────────────────────────
+    // 7️⃣ Return ONLY what frontend needs
+    // ─────────────────────────────────────────────
+    return {
+      subscriptionId: subscription.id,
+      customerId: customer.id,
+      status: subscription.status,
+      clientSecret: paymentIntent?.client_secret ?? null,
+      requiresAction: paymentIntent?.status === "requires_action",
+      packageKey: packageDetails.packageKey,
+      plan: packageDetails.plan,
+      maxGpts: packageDetails.maxGpts
+    };
   }
 });
 
 /**
  * Create a portal session for subscription management
  */
-export const createPortalSession = action({
-  args: {
-    returnUrl: v.string()
-  },
-  handler: async (ctx, args) => {
-    const stripe = getStripe();
+// export const createPortalSession = action({
+//   args: {
+//     returnUrl: v.string()
+//   },
+//   handler: async (ctx, args) => {
+//     const stripe = getStripe();
 
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+//     const identity = await ctx.auth.getUserIdentity();
+//     if (!identity) {
+//       throw new Error("Not authenticated");
+//     }
 
-    const user = await ctx.runQuery(api.users.getByClerkId, {
-      clerkId: identity.subject
-    });
+//     const user = await ctx.runQuery(api.users.getByClerkId, {
+//       clerkId: identity.subject
+//     });
 
-    if (!user?.stripeCustomerId) {
-      throw new Error("No Stripe customer found");
-    }
+//     if (!user?.stripeCustomerId) {
+//       throw new Error("No Stripe customer found");
+//     }
 
-    const session = await stripe.billingPortal.sessions.create({
-      customer: user.stripeCustomerId,
-      return_url: args.returnUrl
-    });
+//     const session = await stripe.billingPortal.sessions.create({
+//       customer: user.stripeCustomerId,
+//       return_url: args.returnUrl
+//     });
 
-    return { url: session.url };
-  }
-});
+//     return { url: session.url };
+//   }
+// });
 
 /**
  * Create a checkout session for subscription
  */
 // In createCheckoutSession action - FIXED
+
+export const updateStripeCustomerId = mutation({
+  args: {
+    userId: v.id("users"),
+    stripeCustomerId: v.string()
+  },
+  handler: async (ctx, { userId, stripeCustomerId }) => {
+    await ctx.db.patch(userId, {
+      stripeCustomerId,
+      updatedAt: Date.now()
+    });
+  }
+});
+
 export const createCheckoutSession = action({
   args: {
     priceId: v.string(),
@@ -1106,13 +1250,11 @@ export const createCheckoutSession = action({
     const stripe = getStripe();
 
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    if (!identity) throw new Error("Not authenticated");
 
-    // Get or create Stripe customer
     let customerId: string;
-    const user = await ctx.runQuery(api.users.getByClerkId, {
+
+    const user = await ctx.runQuery(api.users.getUserByClerkId, {
       clerkId: identity.subject
     });
 
@@ -1122,58 +1264,110 @@ export const createCheckoutSession = action({
       const customer = await stripe.customers.create({
         email: identity.email!,
         name: identity.name,
-        metadata: {
-          clerkId: identity.subject
-        }
+        metadata: { clerkId: identity.subject }
       });
       customerId = customer.id;
 
-      // Update user directly if needed, or let subscription update handle it
       if (user) {
-        await ctx.db.patch(user._id, {
-          stripeCustomerId: customerId,
-          updatedAt: Date.now()
+        await ctx.runMutation(api.users.updateStripeCustomerId, {
+          clerkId: user._id,
+          stripeCustomerId: customerId
         });
       }
     }
 
-    // Create checkout session
-    const sessionParams: Stripe.Checkout.SessionCreateParams = {
+    // Create checkout session...
+    const session = await stripe.checkout.sessions.create({
       customer: customerId,
-      line_items: [
-        {
-          price: args.priceId,
-          quantity: 1
-        }
-      ],
+      line_items: [{ price: args.priceId, quantity: 1 }],
       mode: "subscription",
       success_url: args.successUrl,
       cancel_url: args.cancelUrl,
-      metadata: {
-        clerkId: identity.subject
-      }
-    };
-
-    // Check if this is Client Project to add trial
-    try {
-      const price = await stripe.prices.retrieve(args.priceId);
-      if (price.product) {
-        const product = await stripe.products.retrieve(price.product as string);
-        if (product.name?.toLowerCase().includes("client project")) {
-          sessionParams.subscription_data = {
-            trial_period_days: 30
-          };
-        }
-      }
-    } catch (error) {
-      console.warn("Could not retrieve product info for trial:", error);
-    }
-
-    const session = await stripe.checkout.sessions.create(sessionParams);
+      metadata: { clerkId: identity.subject }
+    });
 
     return { url: session.url };
   }
 });
+
+// export const createCheckoutSession = action({
+//   args: {
+//     priceId: v.string(),
+//     successUrl: v.string(),
+//     cancelUrl: v.string()
+//   },
+//   handler: async (ctx, args) => {
+//     const stripe = getStripe();
+
+//     const identity = await ctx.auth.getUserIdentity();
+//     if (!identity) {
+//       throw new Error("Not authenticated");
+//     }
+
+//     // Get or create Stripe customer
+//     let customerId: string;
+//     const user = await ctx.runQuery(api.users.getUserByClerkId, {
+//       clerkId: identity.subject
+//     });
+
+//     if (user?.stripeCustomerId) {
+//       customerId = user.stripeCustomerId;
+//     } else {
+//       const customer = await stripe.customers.create({
+//         email: identity.email!,
+//         name: identity.name,
+//         metadata: {
+//           clerkId: identity.subject
+//         }
+//       });
+//       customerId = customer.id;
+
+//       // Update user directly if needed, or let subscription update handle it
+//       if (user) {
+//         await ctx.db.patch(user._id, {
+//           stripeCustomerId: customerId,
+//           updatedAt: Date.now()
+//         });
+//       }
+//     }
+
+//     // Create checkout session
+//     const sessionParams: Stripe.Checkout.SessionCreateParams = {
+//       customer: customerId,
+//       line_items: [
+//         {
+//           price: args.priceId,
+//           quantity: 1
+//         }
+//       ],
+//       mode: "subscription",
+//       success_url: args.successUrl,
+//       cancel_url: args.cancelUrl,
+//       metadata: {
+//         clerkId: identity.subject
+//       }
+//     };
+
+//     // Check if this is Client Project to add trial
+//     try {
+//       const price = await stripe.prices.retrieve(args.priceId);
+//       if (price.product) {
+//         const product = await stripe.products.retrieve(price.product as string);
+//         if (product.name?.toLowerCase().includes("client project")) {
+//           sessionParams.subscription_data = {
+//             trial_period_days: 30
+//           };
+//         }
+//       }
+//     } catch (error) {
+//       console.warn("Could not retrieve product info for trial:", error);
+//     }
+
+//     const session = await stripe.checkout.sessions.create(sessionParams);
+
+//     return { url: session.url };
+//   }
+// });
 
 /**
  * Webhook Handler to keep DB in sync when payments succeed or fail
@@ -1314,7 +1508,7 @@ async function handleSubscriptionUpdate(
     console.log(`📝 Subscription data to save:`, subscriptionData);
 
     // Update user subscription in database
-    const user = await ctx.runQuery(api.users.getByClerkId, {
+    const user = await ctx.runQuery(api.users.getUserByClerkId, {
       clerkId: clerkUserId
     });
 
@@ -1381,7 +1575,8 @@ async function handleSubscriptionDeleted(
  * Handle successful payment
  */
 async function handlePaymentSucceeded(ctx: any, invoice: Stripe.Invoice) {
-  const subscriptionId = invoice.subscription as string;
+  // const subscriptionId = invoice.subscription as string;
+  const subscriptionId = invoice.lines.data[0]?.subscription as string | null;
 
   // Update subscription to active if it was incomplete
   await ctx.runMutation(internal.users.updateSubscriptionByStripeId, {
@@ -1394,7 +1589,8 @@ async function handlePaymentSucceeded(ctx: any, invoice: Stripe.Invoice) {
  * Handle failed payment
  */
 async function handlePaymentFailed(ctx: any, invoice: Stripe.Invoice) {
-  const subscriptionId = invoice.subscription as string;
+  // const subscriptionId = invoice.subscription as string;
+  const subscriptionId = invoice.lines.data[0]?.subscription as string | null;
 
   // Update subscription to past_due
   await ctx.runMutation(internal.users.updateSubscriptionByStripeId, {
@@ -1475,7 +1671,7 @@ export const cancelSubscription = action({
       throw new Error("Not authenticated");
     }
 
-    const user = await ctx.runQuery(api.users.getByClerkId, {
+    const user = await ctx.runQuery(api.users.getUserByClerkId, {
       clerkId: identity.subject
     });
 
@@ -1513,7 +1709,7 @@ export const reactivateSubscription = action({
       throw new Error("Not authenticated");
     }
 
-    const user = await ctx.runQuery(api.users.getByClerkId, {
+    const user = await ctx.runQuery(api.users.getUserByClerkId, {
       clerkId: identity.subject
     });
 

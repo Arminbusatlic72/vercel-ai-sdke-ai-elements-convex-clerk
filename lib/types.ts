@@ -11,6 +11,11 @@ export interface Message {
   role: MessageRole;
   content: string;
 }
+export type ModelConfig = {
+  name: string;
+  value: string;
+  provider: "OpenAI" | "Google" | "Perplexity";
+};
 
 export enum StreamMessageType {
   Token = "token",
@@ -73,7 +78,7 @@ export interface GPTConfig {
   gptId: string;
   model: string;
   apiKey?: string;
-  systemPrompt: string;
+  systemPrompt?: string;
   vectorStoreId?: string;
   packageId?: Id<"packages">;
   pdfFiles?: {

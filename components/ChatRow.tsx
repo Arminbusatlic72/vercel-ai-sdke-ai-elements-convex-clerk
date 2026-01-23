@@ -11,7 +11,7 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { ChatActionButtons } from "./ChatActionButtons";
 
-type ChatType = {
+export type ChatType = {
   _id: Id<"chats">;
   title: string;
   createdAt: number;
@@ -252,7 +252,7 @@ export default function ChatRow({
                 className="flex items-center gap-1 sm:hidden"
                 title={formatDetailedDateTime(chat.createdAt)}
               >
-                <Calendar className="w-4 h-4 flex-shrink-0" />
+                <Calendar className="w-4 h-4 shrink-0" />
                 <span className="truncate max-w-[50px]">
                   {formatCompactDate(chat.createdAt)}
                 </span>
@@ -263,7 +263,7 @@ export default function ChatRow({
                 className="hidden sm:flex sm:items-center sm:gap-1"
                 title={formatDetailedDateTime(chat.createdAt)}
               >
-                <Calendar className="w-3 h-3 flex-shrink-0" />
+                <Calendar className="w-3 h-3 shrink-0" />
                 <span className="truncate max-w-[60px]">
                   {formatCompactDate(chat.createdAt)}
                 </span>
@@ -275,7 +275,7 @@ export default function ChatRow({
                 <span className="truncate max-w-[120px]">
                   {formatFullDate(chat.createdAt)}
                 </span>
-                <Clock className="w-3 h-3 flex-shrink-0 text-gray-400" />
+                <Clock className="w-3 h-3 shrink-0 text-gray-400" />
                 <span className="text-gray-600">
                   {new Date(chat.createdAt).toLocaleTimeString("en-US", {
                     hour: "numeric",

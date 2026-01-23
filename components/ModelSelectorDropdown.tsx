@@ -41,7 +41,10 @@ import {
   AlertCircle,
   ExternalLink
 } from "lucide-react";
-
+import { GPTConfig } from "@/lib/types";
+type GPTItem = {
+  gptId: string;
+};
 export default function ModelSelectorDropdown() {
   const pathname = usePathname();
 
@@ -50,10 +53,11 @@ export default function ModelSelectorDropdown() {
   const isAdmin = userData?.role === "admin";
 
   // Get subscription GPTs (only shows GPTs from user's active subscription)
-  const subscriptionGpts = useQuery(api.packages.getSubscriptionGpts) || [];
+  const subscriptionGpts = (useQuery(api.packages.getSubscriptionGpts) ||
+    []) as GPTConfig[];
 
   // Get all GPTs (for admin only)
-  const allGPTs = useQuery(api.gpts.listGpts) || [];
+  const allGPTs = (useQuery(api.gpts.listGpts) || []) as GPTConfig[];
 
   // If admin, show all GPTs. Otherwise, show only GPTs from user's subscription
   const gptsToShow = isAdmin ? allGPTs : subscriptionGpts;
@@ -107,7 +111,8 @@ export default function ModelSelectorDropdown() {
   };
 
   // Create dynamic links from available GPTs
-  const sourceGpts = isAdmin ? allGPTs : subscriptionGpts;
+  // const sourceGpts = isAdmin ? allGPTs : subscriptionGpts;
+  const sourceGpts: GPTConfig[] = isAdmin ? allGPTs : subscriptionGpts;
 
   const dynamicLinks = sourceGpts.map((gpt) => ({
     id: gpt.gptId,
@@ -117,14 +122,24 @@ export default function ModelSelectorDropdown() {
   }));
   console.log("Dynamic Links:", dynamicLinks);
   // Static links
-  const staticLLMs = [
-    {
-      id: "gpt5",
-      name: "GPT 5",
-      href: "/gpt5",
-      icon: <Zap className="w-4 h-4" />
-    }
-  ];
+  // const staticLLMs = [
+  //   {
+  //     id: "gpt5",
+  //     name: "GPT 5",
+  //     href: "/gpt5",
+  //     icon: <Zap className="w-4 h-4" />
+  //   }
+  // ];
+  const staticLLMs = isAdmin
+    ? [
+        {
+          id: "gpt5",
+          name: "GPT 5",
+          href: "/gpt5",
+          icon: <Zap className="w-4 h-4" />
+        }
+      ]
+    : [];
 
   const staticDashboard = [
     {
@@ -146,10 +161,16 @@ export default function ModelSelectorDropdown() {
 
   const allLinks = [...staticLLMs, ...dynamicLinks];
 
+  // const activeModel =
+  //   [...allLinks]
+  //     .sort((a, b) => b.href.length - a.href.length)
+  //     .find((item) => pathname.startsWith(item.href)) || staticLLMs[0];
   const activeModel =
     [...allLinks]
       .sort((a, b) => b.href.length - a.href.length)
-      .find((item) => pathname.startsWith(item.href)) || staticLLMs[0];
+      .find((item) => pathname.startsWith(item.href)) ||
+    dynamicLinks[0] ||
+    staticDashboard[0];
 
   const renderGroup = (
     label: string,
@@ -211,7 +232,7 @@ export default function ModelSelectorDropdown() {
 
       <DropdownMenuContent
         align="end"
-        className="w-80 mt-2 rounded-md bg-white shadow-lg p-0 border z-[100] max-h-[80vh] overflow-y-auto"
+        className="w-80 mt-2 rounded-md bg-white shadow-lg p-0 border z-100 max-h-[80vh] overflow-y-auto"
       >
         {/* Generic LLM */}
         {renderGroup(
@@ -236,8 +257,8 @@ export default function ModelSelectorDropdown() {
           </>
         )}
 
-        {/* Show empty state if no GPTs available (non-admin users) */}
-        {!isAdmin && dynamicLinks.length === 0 && (
+        {/* Show empty state if no subscription (non-admin users) */}
+        {!isAdmin && dynamicLinks.length === 0 && !userData?.subscription && (
           <div className="px-4 py-6 text-center">
             <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
               <Cpu className="w-6 h-6 text-gray-400" />
@@ -284,7 +305,7 @@ export default function ModelSelectorDropdown() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-medium text-gray-700">
-                    {userData.subscription.productName || "Active Plan"}
+                    Plan: {userData.subscription.productName || "Active Plan"}
                   </p>
                   <p className="text-xs text-gray-500">
                     {dynamicLinks.length} GPTs available

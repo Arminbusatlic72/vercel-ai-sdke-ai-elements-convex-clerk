@@ -9,7 +9,17 @@ import { openaiModels } from "@/lib/ai-models";
 interface ChatPageProps {
   params: Promise<{ chatId: string }>;
 }
-
+type Message = {
+  _id: Id<"messages">;
+  role: string;
+  content: string;
+  // Add other fields if needed
+};
+type ChatUIMessage = {
+  _id: Id<"messages">;
+  role: "user" | "assistant";
+  content: string;
+};
 export default async function ChatIdPage({ params }: ChatPageProps) {
   const { userId } = await auth();
 
@@ -33,12 +43,12 @@ export default async function ChatIdPage({ params }: ChatPageProps) {
   }
 
   // 4. Fetch Messages (Using your 'list' query)
-  const messages = await fetchQuery(api.messages.list, {
+  const messages = (await fetchQuery(api.messages.list, {
     chatId: chatId as Id<"chats">
-  });
+  })) as Message[];
 
   // 5. Format for useAiChat hook
-  const initialMessages = messages.map((msg) => ({
+  const initialMessages: ChatUIMessage[] = messages.map((msg) => ({
     _id: msg._id,
     role: msg.role as "user" | "assistant",
     content: msg.content

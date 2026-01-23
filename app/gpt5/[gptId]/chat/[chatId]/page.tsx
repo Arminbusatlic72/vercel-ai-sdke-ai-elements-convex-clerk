@@ -12,6 +12,17 @@ interface ChatPageProps {
     chatId: string;
   };
 }
+type Message = {
+  _id: Id<"messages">;
+  role: string;
+  content: string;
+  // Add other fields if needed
+};
+type ChatUIMessage = {
+  _id: Id<"messages">;
+  role: "user" | "assistant";
+  content: string;
+};
 
 export default async function ChatIdPage({ params }: ChatPageProps) {
   const { userId } = await auth();
@@ -38,10 +49,10 @@ export default async function ChatIdPage({ params }: ChatPageProps) {
   }
 
   // 3️⃣ Load messages
-  const messages = await fetchQuery(api.messages.list, {
+  const messages = (await fetchQuery(api.messages.list, {
     chatId: chat._id
-  });
-  const initialMessages = messages.map((msg) => ({
+  })) as Message[];
+  const initialMessages: ChatUIMessage[] = messages.map((msg) => ({
     _id: msg._id,
     role: msg.role as "user" | "assistant",
     content: msg.content
@@ -57,8 +68,6 @@ export default async function ChatIdPage({ params }: ChatPageProps) {
 
   // 5️⃣ Resolve default model
   const resolvedDefaultModel = chat.model ?? gpt?.model ?? "gpt-4o-mini";
-
-  console.log("[GPT PAGE]", { chatId, gptId, resolvedDefaultModel });
 
   return (
     <AiChat

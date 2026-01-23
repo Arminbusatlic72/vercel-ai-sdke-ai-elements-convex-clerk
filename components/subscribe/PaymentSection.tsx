@@ -159,15 +159,15 @@ export default function PaymentSection({
 }: PaymentSectionProps) {
   // Format price for display
   const formatPrice = () => {
-    const dollars = currentPackage.priceAmount / 100;
-    const recurring =
-      currentPackage.recurring === "monthly"
-        ? "/month"
-        : currentPackage.recurring === "yearly"
-          ? "/year"
-          : "";
+    const dollars = currentPackage.priceAmount! / 100;
+    const recurring = currentPackage.recurring === "one-time" ? "" : "";
+
     return `$${dollars}${recurring}`;
   };
+  const recurring = currentPackage.recurring as
+    | "monthly"
+    | "yearly"
+    | "one-time";
 
   return (
     <form onSubmit={onSubmit}>
@@ -236,7 +236,7 @@ export default function PaymentSection({
             <input
               type="email"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              value={currentPackage.priceAmount > 0 ? formatPrice() : "Free"}
+              value={currentPackage.priceAmount! > 0 ? formatPrice() : "Free"}
               disabled
             />
           </div>
@@ -248,9 +248,9 @@ export default function PaymentSection({
               type="text"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               value={
-                currentPackage.recurring === "monthly"
+                recurring === "monthly"
                   ? "Monthly"
-                  : currentPackage.recurring === "yearly"
+                  : recurring === "yearly"
                     ? "Yearly"
                     : "One-time"
               }

@@ -1,5 +1,14 @@
 import { GPTConfig } from "@/lib/types";
 
+// interface GPTListCardProps {
+//   gpts: GPTConfig[];
+//   selectedGptId: string | null;
+//   generalSystemPrompt: string;
+//   onSelect: (gptId: string) => void;
+//   onEdit: (gpt: GPTConfig) => void;
+//   onDelete: (gptId: string) => void;
+// }
+
 interface GPTListCardProps {
   gpts: GPTConfig[];
   selectedGptId: string | null;
@@ -82,7 +91,7 @@ export function GPTListCard({
                   )}
                 </div>
                 <p className="text-sm text-gray-600 mt-1 line-clamp-2">
-                  {g.systemPrompt.substring(0, 120)}...
+                  {(g.systemPrompt || "").substring(0, 120)}...
                 </p>
                 <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
                   <span className="flex items-center gap-1">

@@ -21,7 +21,8 @@ export default defineSchema({
           v.literal("trialing"),
           v.literal("incomplete"),
           v.literal("incomplete_expired"),
-          v.literal("unpaid")
+          v.literal("unpaid"),
+          v.literal("paused")
         ),
         stripeSubscriptionId: v.string(),
         // UPDATE THIS LINE - Add your new plan types

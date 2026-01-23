@@ -3,7 +3,8 @@ import { Id } from "@/convex/_generated/dataModel";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { GPTConfig } from "@/lib/types";
+import { GPTConfig, ModelConfig } from "@/lib/types";
+import { openaiModels } from "@/lib/ai-models";
 import { useAdminModals } from "@/lib/hooks/useAdminModals";
 import { Header } from "@/components/admin/Header";
 import { GeneralSettingsCard } from "@/components/admin/GeneralSettingsCard";
@@ -27,7 +28,8 @@ const sanitizeGptId = (value: string) => {
 
 export default function AdminClient() {
   // Data fetching
-  const gpts = useQuery(api.gpts.listGpts) ?? ([] as GPTConfig[]);
+  // const gpts = useQuery(api.gpts.listGpts) ?? ([] as GPTConfig[]);
+  const gpts: GPTConfig[] = useQuery(api.gpts.listGpts) ?? [];
   const generalSettings = useQuery(api.gpts.getGeneralSettings);
   const upsertGpt = useMutation(api.gpts.upsertGpt);
   const deleteGptMutation = useMutation(api.gpts.deleteGpt);
@@ -66,15 +68,7 @@ export default function AdminClient() {
 
   const sanitizedPreview = sanitizeGptId(gptIdInput);
   const showPreview = Boolean(gptIdInput && sanitizedPreview !== gptIdInput);
-  const modelOptions = [
-    "gpt-4",
-    "gpt-4-turbo",
-    "gpt-3.5-turbo",
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-5",
-    "gpt-5-mini"
-  ];
+  const modelOptions: readonly ModelConfig[] = openaiModels;
 
   // Effects
   useEffect(() => {
@@ -94,7 +88,7 @@ export default function AdminClient() {
   const resetForm = () => {
     setGptId("");
     setGptIdInput("");
-    setModel("gpt-4");
+    setModel("gpt-5");
     setApiKey("");
     setSystemPrompt("");
     setIsEditing(false);
@@ -143,7 +137,7 @@ export default function AdminClient() {
     setGptIdInput(g.gptId);
     setModel(g.model);
     setApiKey(g.apiKey || "");
-    setSystemPrompt(g.systemPrompt);
+    setSystemPrompt(g.systemPrompt || "");
     setSelectedPackageId(g.packageId || ""); // Set package on edit
     setIsEditing(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -334,7 +328,7 @@ export default function AdminClient() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4 md:p-6">
+    <div className="min-h-screen bg-linear-to-br from-gray-50 to-gray-100 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
         <Header gptCount={gpts.length} />
 

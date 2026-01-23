@@ -29,7 +29,11 @@ import SidebarProjects from "./SidebarProjects";
 
 type ProjectId = Id<"projects">;
 type ChatId = Id<"chats">;
-
+type Project = {
+  _id: ProjectId;
+  name: string;
+  // add fields you use elsewhere
+};
 export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
@@ -53,14 +57,21 @@ export default function Sidebar() {
   const [error, setError] = useState<string | null>(null);
 
   // Queries
-  const projects = useQuery(api.project.listProjects) ?? [];
+  const userData = useQuery(api.users.getCurrentUser);
+  const isAdmin = userData?.role === "admin";
+
+  const projects = (useQuery(api.project.listProjects) ?? []) as Project[];
   const projectChats =
     useQuery(
       api.chats.listChats,
       selectedProjectId ? { projectId: selectedProjectId } : "skip"
     ) ?? [];
   const globalChats = useQuery(api.chats.listChats, {}) ?? [];
-  const gpts = useQuery(api.packages.getSubscriptionGpts) ?? [];
+
+  // Get all GPTs for admin, otherwise get subscription GPTs
+  const subscriptionGpts = useQuery(api.packages.getSubscriptionGpts) ?? [];
+  const allGpts = useQuery(api.gpts.listGpts) ?? [];
+  const gpts = isAdmin ? allGpts : subscriptionGpts;
 
   // Mutations
   const createProject = useMutation(api.project.createProject);
@@ -359,6 +370,7 @@ export default function Sidebar() {
             basePath={basePath}
             gptId={gptId}
             selectedGptId={gptId}
+            gpts={gpts}
           />
 
           {/* Projects Section */}

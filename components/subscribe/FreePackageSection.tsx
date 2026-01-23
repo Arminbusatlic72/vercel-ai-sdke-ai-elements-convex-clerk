@@ -121,13 +121,14 @@ export default function FreePackageSection({
 }: FreePackageSectionProps) {
   // Format duration for display
   const formatDuration = () => {
-    if (!currentPackage.duration) return "";
-    if (currentPackage.duration === 1) return "1 day";
-    if (currentPackage.duration < 30) return `${currentPackage.duration} days`;
-    if (currentPackage.duration === 30) return "1 month";
-    if (currentPackage.duration === 90) return "3 months";
-    if (currentPackage.duration === 150) return "5 months";
-    const months = Math.floor(currentPackage.duration / 30);
+    if (!currentPackage.durationDays) return "";
+    if (currentPackage.durationDays === 1) return "1 day";
+    if (currentPackage.durationDays < 30)
+      return `${currentPackage.durationDays} days`;
+    if (currentPackage.durationDays === 30) return "1 month";
+    if (currentPackage.durationDays === 90) return "3 months";
+    if (currentPackage.durationDays === 150) return "5 months";
+    const months = Math.floor(currentPackage.durationDays / 30);
     return `${months} month${months > 1 ? "s" : ""}`;
   };
 
@@ -146,7 +147,7 @@ export default function FreePackageSection({
           </div>
           <div className="text-right">
             <div className="text-2xl font-bold text-gray-900">Free</div>
-            {currentPackage.duration && (
+            {currentPackage.durationDays && (
               <div className="text-sm text-gray-500 mt-1">
                 {formatDuration()} access
               </div>
@@ -210,8 +211,8 @@ export default function FreePackageSection({
             <div>
               <h4 className="font-semibold text-yellow-800">Trial Period</h4>
               <p className="text-yellow-700 text-sm mt-1">
-                This is a {currentPackage.duration || 30}-day trial. No payment
-                required now.
+                This is a {currentPackage.durationDays || 30}-day trial. No
+                payment required now.
                 {currentPackage.recurring === "monthly" &&
                   " After trial, converts to paid monthly subscription."}
               </p>
@@ -258,7 +259,7 @@ export default function FreePackageSection({
             Activating...
           </>
         ) : currentPackage.tier === "trial" ? (
-          `Start ${currentPackage.duration || 30}-Day Free Trial`
+          `Start ${currentPackage.durationDays || 30}-Day Free Trial`
         ) : (
           "Activate Free Package"
         )}

@@ -19,7 +19,7 @@ export function GPTDetailsCard({
         </div>
         <Link
           href={`/gpt5/${selectedGpt.gptId}`}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all shadow-lg hover:shadow-xl"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-linear-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all shadow-lg hover:shadow-xl"
         >
           <svg
             className="w-5 h-5"
@@ -79,7 +79,7 @@ export function GPTDetailsCard({
               System Prompt
             </label>
             <span className="text-xs text-gray-400">
-              {selectedGpt.systemPrompt.length} chars
+              {(selectedGpt.systemPrompt || "").length} chars
             </span>
           </div>
           <div className="mt-2 p-3 bg-gray-50 rounded-lg max-h-60 overflow-y-auto">

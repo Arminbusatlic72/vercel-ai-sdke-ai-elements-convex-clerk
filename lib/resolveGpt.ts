@@ -55,7 +55,7 @@ export async function resolveGptFromDb(
     return {
       gptId: gpt.gptId,
       model: gpt.model,
-      systemPrompt: gpt.systemPrompt,
+      systemPrompt: gpt.systemPrompt ?? "You are a helpful AI assistant.",
       apiKey: gpt.apiKey,
       vectorStoreId: gpt.vectorStoreId,
       pdfFiles: gpt.pdfFiles

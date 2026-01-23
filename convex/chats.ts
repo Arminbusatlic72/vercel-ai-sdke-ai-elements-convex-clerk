@@ -123,29 +123,56 @@ export const createChat = mutation({
 //   }
 // });
 
+// export const listChats = query({
+//   args: {
+//     projectId: v.optional(v.id("projects"))
+//   },
+//   handler: async (ctx, { projectId }) => {
+//     if (projectId) {
+//       // Chats inside a project
+//       return await ctx.db
+//         .query("chats")
+//         .withIndex("by_project", (q) => q.eq("projectId", projectId))
+//         .order("desc")
+//         .collect();
+//     }
+
+//     // 🌍 Chats NOT in any project (global chats)
+//     return await ctx.db
+//       .query("chats")
+//       .withIndex("by_project", (q) => q.eq("projectId", undefined))
+//       .order("desc")
+//       .collect();
+//   }
+// });
+
 export const listChats = query({
   args: {
     projectId: v.optional(v.id("projects"))
   },
   handler: async (ctx, { projectId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
     if (projectId) {
-      // Chats inside a project
+      // Chats inside a project - filtered by user
       return await ctx.db
         .query("chats")
         .withIndex("by_project", (q) => q.eq("projectId", projectId))
+        .filter((q) => q.eq(q.field("userId"), identity.subject))
         .order("desc")
         .collect();
     }
 
-    // 🌍 Chats NOT in any project (global chats)
+    // 🌍 Global chats (NOT in any project) - filtered by user
     return await ctx.db
       .query("chats")
-      .withIndex("by_project", (q) => q.eq("projectId", undefined))
+      .withIndex("by_user", (q) => q.eq("userId", identity.subject))
+      .filter((q) => q.eq(q.field("projectId"), undefined))
       .order("desc")
       .collect();
   }
 });
-
 // Delete a chat
 export const deleteChat = mutation({
   args: { id: v.id("chats") },
