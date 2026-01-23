@@ -13,6 +13,19 @@ export default function PackageCard({
   onSelect
 }: PackageCardProps) {
   // Format price for display
+  // const formatPrice = () => {
+  //   if (pkg.priceAmount === 0) {
+  //     if (pkg.tier === "trial") {
+  //       return `Free ${pkg.durationDays || 30}-Day Trial`;
+  //     }
+  //     return "Free";
+  //   }
+
+  //   const dollars = pkg.priceAmount ?? 0 / 100;
+  //   const recurring = pkg.recurring === "monthly" ? "/month" : "/year";
+  //   return `$${dollars}${recurring}`;
+  // };
+
   const formatPrice = () => {
     if (pkg.priceAmount === 0) {
       if (pkg.tier === "trial") {
@@ -21,9 +34,15 @@ export default function PackageCard({
       return "Free";
     }
 
-    const dollars = pkg.priceAmount ?? 0 / 100;
-    const recurring = pkg.recurring === "monthly" ? "/month" : "/year";
-    return `$${dollars}${recurring}`;
+    const dollars = (pkg.priceAmount ?? 0) / 100;
+    const formatted = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD"
+    }).format(dollars);
+
+    const recurring =
+      pkg.recurring === "monthly" ? "/month" : `/${pkg.durationDays} days`;
+    return `${formatted}${recurring}`;
   };
 
   return (
