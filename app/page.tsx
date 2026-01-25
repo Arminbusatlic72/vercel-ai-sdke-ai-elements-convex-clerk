@@ -10,11 +10,11 @@ export default function LandingPage() {
       <section className="w-full px-4 py-8 mx-auto max-w-7xl sm:px-6 lg:px-8 flex flex-col items-center space-y-10 text-center">
         <header className="space-y-6">
           <h1 className="text-5xl font-bold tracking-tight sm:text-7xl bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 bg-clip-text text-transparent">
-            Story Engine Sandbox
+            StoryEngine Sandbox
           </h1>
           <p className="max-w-[600px] text-lg text-gray-600 md:text-xl/relaxed xl:text-2xl/relaxed">
             Generative AI assistant that organize, surface, and structure
-            signals so that sansemaking can occur.
+            signals so that sensemaking can occur.
             <br />
             <span className="text-gray-400 text-sm">
               Powered by scenarioDNA's Culture Mapping{" "}

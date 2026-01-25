@@ -345,6 +345,7 @@ export function useAiChat({
 }: UseAiChatProps) {
   // --- States ---
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [chatId, setChatId] = useState<Id<"chats"> | undefined>(initialChatId);
   const [model, setModel] = useState<string>(
     () => defaultModel || models[0]?.value || ""
@@ -576,6 +577,7 @@ export function useAiChat({
       );
 
       setInput("");
+      setAttachments([]);
     },
     [
       chatId,
@@ -609,6 +611,7 @@ export function useAiChat({
     chatId,
     input,
     setInput,
+
     model,
     setModel: handleModelChange,
     webSearch,

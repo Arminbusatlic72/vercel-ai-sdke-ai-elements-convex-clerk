@@ -263,6 +263,7 @@ function AiChat<
   const {
     input,
     setInput,
+
     model,
     webSearch,
     toggleWebSearch,
@@ -368,7 +369,10 @@ function AiChat<
                   {currentModelName}
                 </div>
               </PromptInputTools>
-              <PromptInputSubmit disabled={!input && !status} status={status} />
+              <PromptInputSubmit
+                disabled={!input.trim() && status !== "streaming"}
+                status={status}
+              />
             </PromptInputFooter>
           </PromptInput>
         </div>
