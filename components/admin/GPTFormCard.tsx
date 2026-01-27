@@ -7,6 +7,8 @@ import { LoadingSpinner } from "./LoadingSpinner";
 interface GPTFormCardProps {
   isEditing: boolean;
   gptIdInput: string;
+  name: string; // ✅ ADD THIS
+  description: string; // ✅ ADD THIS
   model: string;
   apiKey: string;
   systemPrompt: string;
@@ -18,6 +20,8 @@ interface GPTFormCardProps {
   selectedPackageId: string | Id<"packages"> | undefined;
   onPackageChange: (value: string) => void;
   onGptIdChange: (value: string) => void;
+  onNameChange: (value: string) => void; // ✅ ADD THIS
+  onDescriptionChange: (value: string) => void; // ✅ ADD THIS
   onModelChange: (value: string) => void;
   onApiKeyChange: (value: string) => void;
   onSystemPromptChange: (value: string) => void;
@@ -33,6 +37,8 @@ type Package = {
 export function GPTFormCard({
   isEditing,
   gptIdInput,
+  name, // ✅ ADD THIS
+  description, // ✅ ADD THIS
   model,
   apiKey,
   systemPrompt,
@@ -44,6 +50,8 @@ export function GPTFormCard({
   selectedPackageId,
   onPackageChange,
   onGptIdChange,
+  onNameChange, // ✅ ADD THIS
+  onDescriptionChange, // ✅ ADD THIS
   onModelChange,
   onApiKeyChange,
   onSystemPromptChange,
@@ -115,6 +123,36 @@ export function GPTFormCard({
               only.
             </p>
           )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Display Name
+          </label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => onNameChange(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="e.g., Sales Assistant"
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Friendly name shown to users (optional)
+          </p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Description
+          </label>
+          <textarea
+            value={description}
+            onChange={(e) => onDescriptionChange(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            rows={3}
+            placeholder="Describe what this GPT does and what knowledge it has access to..."
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Helps users understand when to use this GPT
+          </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

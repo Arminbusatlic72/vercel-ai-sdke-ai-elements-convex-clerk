@@ -1,4 +1,5 @@
-/// app/components/ModelSelectorDropdown.tsx
+// app/components/ModelSelectorDropdown.tsx
+
 "use client";
 
 import Link from "next/link";
@@ -42,9 +43,11 @@ import {
   ExternalLink
 } from "lucide-react";
 import { GPTConfig } from "@/lib/types";
+
 type GPTItem = {
   gptId: string;
 };
+
 export default function ModelSelectorDropdown() {
   const pathname = usePathname();
 
@@ -111,32 +114,27 @@ export default function ModelSelectorDropdown() {
   };
 
   // Create dynamic links from available GPTs
-  // const sourceGpts = isAdmin ? allGPTs : subscriptionGpts;
   const sourceGpts: GPTConfig[] = isAdmin ? allGPTs : subscriptionGpts;
 
+  // ✅ UPDATE: Include description in dynamic links
   const dynamicLinks = sourceGpts.map((gpt) => ({
     id: gpt.gptId,
-    name: formatGptTitle(gpt.gptId),
+    name: gpt.name || formatGptTitle(gpt.gptId), // ✅ Use name if available
+    description: gpt.description, // ✅ ADD THIS
     href: `/gpt5/${gpt.gptId}`,
     icon: getGPTIcon(gpt.gptId)
   }));
+
   console.log("Dynamic Links:", dynamicLinks);
-  // Static links
-  // const staticLLMs = [
-  //   {
-  //     id: "gpt5",
-  //     name: "GPT 5",
-  //     href: "/gpt5",
-  //     icon: <Zap className="w-4 h-4" />
-  //   }
-  // ];
+
   const staticLLMs = isAdmin
     ? [
         {
           id: "gpt5",
           name: "GPT 5",
           href: "/gpt5",
-          icon: <Zap className="w-4 h-4" />
+          icon: <Zap className="w-4 h-4" />,
+          description: "Universal AI assistant" // ✅ ADD THIS
         }
       ]
     : [];
@@ -161,10 +159,6 @@ export default function ModelSelectorDropdown() {
 
   const allLinks = [...staticLLMs, ...dynamicLinks];
 
-  // const activeModel =
-  //   [...allLinks]
-  //     .sort((a, b) => b.href.length - a.href.length)
-  //     .find((item) => pathname.startsWith(item.href)) || staticLLMs[0];
   const activeModel =
     [...allLinks]
       .sort((a, b) => b.href.length - a.href.length)
@@ -172,6 +166,7 @@ export default function ModelSelectorDropdown() {
     dynamicLinks[0] ||
     staticDashboard[0];
 
+  // ✅ UPDATE: renderGroup to show descriptions
   const renderGroup = (
     label: string,
     items: any[],
@@ -197,15 +192,39 @@ export default function ModelSelectorDropdown() {
           <DropdownMenuItem key={item.id} asChild>
             <Link
               href={item.href}
-              className={`flex items-center gap-3 py-2 text-sm cursor-pointer transition-colors px-4
+              className={`flex items-start gap-3 py-3 px-4 text-sm cursor-pointer transition-colors
                 ${
                   isActive
-                    ? "bg-blue-50 text-blue-700 font-semibold"
+                    ? "bg-blue-50 text-blue-700"
                     : "text-gray-700 hover:bg-gray-100"
                 }`}
             >
-              {item.icon && <div className="text-gray-500">{item.icon}</div>}
-              <span>{item.name}</span>
+              {/* Icon */}
+              <div
+                className={`mt-0.5 ${isActive ? "text-blue-600" : "text-gray-500"}`}
+              >
+                {item.icon}
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <div
+                  className={`font-semibold ${isActive ? "text-blue-700" : "text-gray-900"}`}
+                >
+                  {item.name}
+                </div>
+
+                {/* ✅ ADD DESCRIPTION */}
+                {item.description && (
+                  <p
+                    className={`text-xs mt-0.5 line-clamp-2 ${
+                      isActive ? "text-blue-600" : "text-gray-500"
+                    }`}
+                  >
+                    {item.description}
+                  </p>
+                )}
+              </div>
             </Link>
           </DropdownMenuItem>
         );
@@ -235,14 +254,17 @@ export default function ModelSelectorDropdown() {
         className="w-80 mt-2 rounded-md bg-white shadow-lg p-0 border z-100 max-h-[80vh] overflow-y-auto"
       >
         {/* Generic LLM */}
-        {renderGroup(
-          "Generic LLM",
-          staticLLMs,
-          "Universal AI assistant",
-          <Zap className="w-4 h-4" />
+        {staticLLMs.length > 0 && (
+          <>
+            {renderGroup(
+              "Generic LLM",
+              staticLLMs,
+              undefined,
+              <Zap className="w-4 h-4" />
+            )}
+            <DropdownMenuSeparator className="h-px bg-gray-200" />
+          </>
         )}
-
-        <DropdownMenuSeparator className="h-px bg-gray-200" />
 
         {/* Package-Specific GPTs */}
         {dynamicLinks.length > 0 && (
@@ -250,7 +272,7 @@ export default function ModelSelectorDropdown() {
             {renderGroup(
               "Your GPTs",
               dynamicLinks,
-              `${dynamicLinks.length} GPTs available`
+              `${dynamicLinks.length} specialized assistants available`
             )}
 
             <DropdownMenuSeparator className="h-px bg-gray-200" />

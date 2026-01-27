@@ -113,6 +113,8 @@ export default defineSchema({
     .index("by_project", ["projectId"]),
   gpts: defineTable({
     gptId: v.string(),
+    name: v.optional(v.string()),
+    description: v.optional(v.string()),
     model: v.string(),
     apiKey: v.optional(v.string()),
     packageId: v.optional(v.id("packages")),
@@ -134,27 +136,6 @@ export default defineSchema({
   })
     .index("by_gptId", ["gptId"])
     .index("by_packageId", ["packageId"]),
-  // gpts: defineTable({
-  //   gptId: v.string(), // "sales", "support", etc.
-  //   model: v.string(),
-  //   apiKey: v.optional(v.string()),
-  //   packageId: v.optional(v.id("packages")),
-  //   vectorStoreId: v.optional(v.string()),
-  //   pdfFiles: v.optional(
-  //     v.array(
-  //       v.object({
-  //         fileName: v.string(),
-  //         openaiFileId: v.string(),
-  //         uploadedAt: v.number()
-  //       })
-  //     )
-  //   ),
-  //   systemPrompt: v.optional(v.string()),
-  //   createdAt: v.number(),
-  //   updatedAt: v.number()
-  // })
-  //   .index("by_gptId", ["gptId"])
-  //   .index("by_packageId", ["packageId"]),
 
   // ✅ NEW: General Settings Table (single record)
   generalSettings: defineTable({

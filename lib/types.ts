@@ -76,6 +76,8 @@ export interface ChatRequestBody {
 
 export interface GPTConfig {
   gptId: string;
+  name?: string;
+  description?: string;
   model: string;
   apiKey?: string;
   systemPrompt?: string;

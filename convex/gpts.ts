@@ -105,6 +105,8 @@ export const upsertGeneralSettings = mutation({
 export const upsertGpt = mutation({
   args: {
     gptId: v.string(),
+    name: v.optional(v.string()),
+    description: v.optional(v.string()),
     model: v.string(),
     systemPrompt: v.string(),
     apiKey: v.optional(v.string()),

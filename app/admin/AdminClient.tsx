@@ -43,6 +43,8 @@ export default function AdminClient() {
   // Form state
   const [gptId, setGptId] = useState("");
   const [gptIdInput, setGptIdInput] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [model, setModel] = useState("gpt-4");
   const [apiKey, setApiKey] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -90,6 +92,8 @@ export default function AdminClient() {
   const resetForm = () => {
     setGptId("");
     setGptIdInput("");
+    setName(""); // ✅ ADD THIS
+    setDescription(""); // ✅ ADD THIS
     setModel("gpt-5");
     setApiKey("");
     setSystemPrompt("");
@@ -112,6 +116,8 @@ export default function AdminClient() {
     try {
       await upsertGpt({
         gptId: finalGptId,
+        name: name || undefined, // ✅ ADD THIS
+        description: description || undefined, // ✅ ADD THIS
         model,
         apiKey: apiKey || undefined,
         systemPrompt,
@@ -137,6 +143,8 @@ export default function AdminClient() {
   const handleEdit = (g: GPTConfig) => {
     setGptId(g.gptId);
     setGptIdInput(g.gptId);
+    setName(g.name || ""); // ✅ ADD THIS
+    setDescription(g.description || ""); // ✅ ADD THIS
     setModel(g.model);
     setApiKey(g.apiKey || "");
     setSystemPrompt(g.systemPrompt || "");
@@ -318,38 +326,6 @@ export default function AdminClient() {
       setUploadingPdf(null);
     }
   };
-  // const handlePdfUpload = async (gptId: string, files: FileList) => {
-  //   setUploadingPdf(gptId);
-  //   setPdfError(null);
-
-  //   const formData = new FormData();
-  //   Array.from(files).forEach((file) => {
-  //     formData.append("files", file);
-  //   });
-  //   formData.append("gptId", gptId);
-
-  //   try {
-  //     const response = await fetch("/api/upload-pdf", {
-  //       method: "POST",
-  //       body: formData
-  //     });
-
-  //     const data = await response.json();
-
-  //     if (!response.ok) {
-  //       throw new Error(data.error || "Upload failed");
-  //     }
-
-  //     modalActions.openSuccess("PDF Uploaded", "PDF(s) uploaded successfully!");
-  //   } catch (error) {
-  //     const errorMessage =
-  //       error instanceof Error ? error.message : "Upload failed";
-  //     setPdfError(errorMessage);
-  //     modalActions.openError("Upload Failed", errorMessage);
-  //   } finally {
-  //     setUploadingPdf(null);
-  //   }
-  // };
 
   const handleDeletePdfClick = (
     gptId: string,
@@ -386,51 +362,6 @@ export default function AdminClient() {
       modalActions.closeConfirmDeletePDF();
     }
   };
-
-  // const handleReplacePdf = async (
-  //   gptId: string,
-  //   oldOpenaiFileId: string,
-  //   newFile: File
-  // ) => {
-  //   setUploadingPdf(gptId);
-  //   setPdfError(null);
-
-  //   try {
-  //     // Delete old PDF
-  //     const deleteResponse = await fetch("/api/delete-pdf", {
-  //       method: "POST",
-  //       headers: { "Content-Type": "application/json" },
-  //       body: JSON.stringify({ gptId, openaiFileId: oldOpenaiFileId })
-  //     });
-
-  //     const deleteData = await deleteResponse.json();
-  //     if (!deleteResponse.ok)
-  //       throw new Error(deleteData.error || "Delete failed");
-
-  //     // Upload new PDF
-  //     const formData = new FormData();
-  //     formData.append("files", newFile);
-  //     formData.append("gptId", gptId);
-
-  //     const uploadResponse = await fetch("/api/upload-pdf", {
-  //       method: "POST",
-  //       body: formData
-  //     });
-
-  //     const uploadData = await uploadResponse.json();
-  //     if (!uploadResponse.ok)
-  //       throw new Error(uploadData.error || "Upload failed");
-
-  //     modalActions.openSuccess("PDF Replaced", "PDF replaced successfully!");
-  //   } catch (error) {
-  //     const errorMessage =
-  //       error instanceof Error ? error.message : "Replace failed";
-  //     setPdfError(errorMessage);
-  //     modalActions.openError("Replace Failed", errorMessage);
-  //   } finally {
-  //     setUploadingPdf(null);
-  //   }
-  // };
 
   // General settings handler
   const handleSaveGeneralSettings = async () => {
@@ -494,6 +425,8 @@ export default function AdminClient() {
             <GPTFormCard
               isEditing={isEditing}
               gptIdInput={gptIdInput}
+              name={name} // ✅ ADD THIS
+              description={description} // ✅ ADD THIS
               model={model}
               apiKey={apiKey}
               systemPrompt={systemPrompt}
@@ -505,6 +438,8 @@ export default function AdminClient() {
               showPreview={showPreview}
               modelOptions={modelOptions}
               onGptIdChange={setGptIdInput}
+              onNameChange={setName} // ✅ ADD THIS
+              onDescriptionChange={setDescription} // ✅ ADD THIS
               onModelChange={setModel}
               onApiKeyChange={setApiKey}
               onSystemPromptChange={setSystemPrompt}

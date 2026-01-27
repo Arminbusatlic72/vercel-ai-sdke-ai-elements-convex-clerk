@@ -47,6 +47,17 @@ export function GPTDetailsCard({
             {selectedGpt.gptId}
           </p>
         </div>
+        {/* ✅ ADD DESCRIPTION DISPLAY */}
+        {selectedGpt.description && (
+          <div>
+            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+              Description
+            </label>
+            <p className="mt-1 text-sm text-gray-700 leading-relaxed">
+              {selectedGpt.description}
+            </p>
+          </div>
+        )}
 
         <div>
           <label className="text-sm font-medium text-gray-500">Model</label>
