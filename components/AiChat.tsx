@@ -370,8 +370,9 @@ function AiChat<
                 </div>
               </PromptInputTools>
               <PromptInputSubmit
-                disabled={!input.trim() && status !== "streaming"}
+                // disabled={!input.trim() && status !== "streaming"}
                 status={status}
+                disabled={status === "streaming"}
               />
             </PromptInputFooter>
           </PromptInput>

@@ -111,9 +111,8 @@ export default defineSchema({
     .index("by_chat", ["chatId"])
     // .index("by_user", ["userId"])
     .index("by_project", ["projectId"]),
-
   gpts: defineTable({
-    gptId: v.string(), // "sales", "support", etc.
+    gptId: v.string(),
     model: v.string(),
     apiKey: v.optional(v.string()),
     packageId: v.optional(v.id("packages")),
@@ -123,6 +122,8 @@ export default defineSchema({
         v.object({
           fileName: v.string(),
           openaiFileId: v.string(),
+          convexStorageId: v.id("_storage"), // ✅ ADD THIS
+          fileSize: v.number(), // ✅ ADD THIS
           uploadedAt: v.number()
         })
       )
@@ -133,6 +134,27 @@ export default defineSchema({
   })
     .index("by_gptId", ["gptId"])
     .index("by_packageId", ["packageId"]),
+  // gpts: defineTable({
+  //   gptId: v.string(), // "sales", "support", etc.
+  //   model: v.string(),
+  //   apiKey: v.optional(v.string()),
+  //   packageId: v.optional(v.id("packages")),
+  //   vectorStoreId: v.optional(v.string()),
+  //   pdfFiles: v.optional(
+  //     v.array(
+  //       v.object({
+  //         fileName: v.string(),
+  //         openaiFileId: v.string(),
+  //         uploadedAt: v.number()
+  //       })
+  //     )
+  //   ),
+  //   systemPrompt: v.optional(v.string()),
+  //   createdAt: v.number(),
+  //   updatedAt: v.number()
+  // })
+  //   .index("by_gptId", ["gptId"])
+  //   .index("by_packageId", ["packageId"]),
 
   // ✅ NEW: General Settings Table (single record)
   generalSettings: defineTable({

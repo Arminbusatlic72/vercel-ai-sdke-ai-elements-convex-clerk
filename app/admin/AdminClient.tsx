@@ -1,7 +1,7 @@
 "use client";
 import { Id } from "@/convex/_generated/dataModel";
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useConvex } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { GPTConfig, ModelConfig } from "@/lib/types";
 import { openaiModels } from "@/lib/ai-models";
@@ -27,6 +27,8 @@ const sanitizeGptId = (value: string) => {
 };
 
 export default function AdminClient() {
+  const convex = useConvex();
+
   // Data fetching
   // const gpts = useQuery(api.gpts.listGpts) ?? ([] as GPTConfig[]);
   const gpts: GPTConfig[] = useQuery(api.gpts.listGpts) ?? [];
@@ -172,38 +174,182 @@ export default function AdminClient() {
   };
 
   // PDF handlers
+  // app/admin/page.tsx (or wherever your AdminClient is)
+
+  // Find and REPLACE the handlePdfUpload function:
+
   const handlePdfUpload = async (gptId: string, files: FileList) => {
     setUploadingPdf(gptId);
     setPdfError(null);
 
-    const formData = new FormData();
-    Array.from(files).forEach((file) => {
-      formData.append("files", file);
-    });
-    formData.append("gptId", gptId);
-
     try {
-      const response = await fetch("/api/upload-pdf", {
-        method: "POST",
-        body: formData
-      });
+      const fileArray = Array.from(files);
 
-      const data = await response.json();
+      for (let i = 0; i < fileArray.length; i++) {
+        const file = fileArray[i];
 
-      if (!response.ok) {
-        throw new Error(data.error || "Upload failed");
+        console.log(
+          `[Upload ${i + 1}/${fileArray.length}] Starting: ${file.name}`
+        );
+
+        // ✅ Step 1: Get upload URL from Convex
+        const uploadUrl = await convex.mutation(api.storage.generateUploadUrl);
+
+        // ✅ Step 2: Upload file directly to Convex Storage
+        const uploadResult = await fetch(uploadUrl, {
+          method: "POST",
+          headers: { "Content-Type": file.type },
+          body: file
+        });
+
+        if (!uploadResult.ok) {
+          throw new Error(`Upload to Convex failed for ${file.name}`);
+        }
+
+        const { storageId } = await uploadResult.json();
+        console.log(`[Convex Storage] File uploaded: ${storageId}`);
+
+        // ✅ Step 3: Process and send to OpenAI
+        const processResponse = await fetch("/api/process-convex-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            gptId,
+            storageId,
+            fileName: file.name,
+            fileSize: file.size
+          })
+        });
+
+        if (!processResponse.ok) {
+          const errorData = await processResponse.json();
+          throw new Error(errorData.error || "Processing failed");
+        }
+
+        const processData = await processResponse.json();
+        console.log(
+          `[Success] ${file.name} → OpenAI: ${processData.openaiFileId}`
+        );
       }
 
-      modalActions.openSuccess("PDF Uploaded", "PDF(s) uploaded successfully!");
+      modalActions.openSuccess(
+        "✅ PDFs Uploaded",
+        `Successfully uploaded ${fileArray.length} file(s) to "${gptId}"!`
+      );
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Upload failed";
       setPdfError(errorMessage);
-      modalActions.openError("Upload Failed", errorMessage);
+      modalActions.openError("❌ Upload Failed", errorMessage);
+      console.error("[Upload Error]", error);
     } finally {
       setUploadingPdf(null);
     }
   };
+
+  // Find and REPLACE the handleReplacePdf function:
+
+  const handleReplacePdf = async (
+    gptId: string,
+    oldOpenaiFileId: string,
+    newFile: File
+  ) => {
+    setUploadingPdf(gptId);
+    setPdfError(null);
+
+    try {
+      console.log(`[Replace] Deleting old file: ${oldOpenaiFileId}`);
+
+      // ✅ Delete old PDF (this now also deletes from Convex storage)
+      const deleteResponse = await fetch("/api/delete-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gptId, openaiFileId: oldOpenaiFileId })
+      });
+
+      if (!deleteResponse.ok) {
+        const deleteData = await deleteResponse.json();
+        throw new Error(deleteData.error || "Delete failed");
+      }
+
+      console.log(`[Replace] Old file deleted, uploading new file...`);
+
+      // ✅ Upload new PDF using new flow
+      const uploadUrl = await convex.mutation(api.storage.generateUploadUrl);
+
+      const uploadResult = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": newFile.type },
+        body: newFile
+      });
+
+      if (!uploadResult.ok) {
+        throw new Error("Upload to Convex failed");
+      }
+
+      const { storageId } = await uploadResult.json();
+
+      const processResponse = await fetch("/api/process-convex-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gptId,
+          storageId,
+          fileName: newFile.name,
+          fileSize: newFile.size
+        })
+      });
+
+      if (!processResponse.ok) {
+        const errorData = await processResponse.json();
+        throw new Error(errorData.error || "Processing failed");
+      }
+
+      console.log(`[Replace] Success!`);
+
+      modalActions.openSuccess("✅ PDF Replaced", "PDF replaced successfully!");
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Replace failed";
+      setPdfError(errorMessage);
+      modalActions.openError("❌ Replace Failed", errorMessage);
+      console.error("[Replace Error]", error);
+    } finally {
+      setUploadingPdf(null);
+    }
+  };
+  // const handlePdfUpload = async (gptId: string, files: FileList) => {
+  //   setUploadingPdf(gptId);
+  //   setPdfError(null);
+
+  //   const formData = new FormData();
+  //   Array.from(files).forEach((file) => {
+  //     formData.append("files", file);
+  //   });
+  //   formData.append("gptId", gptId);
+
+  //   try {
+  //     const response = await fetch("/api/upload-pdf", {
+  //       method: "POST",
+  //       body: formData
+  //     });
+
+  //     const data = await response.json();
+
+  //     if (!response.ok) {
+  //       throw new Error(data.error || "Upload failed");
+  //     }
+
+  //     modalActions.openSuccess("PDF Uploaded", "PDF(s) uploaded successfully!");
+  //   } catch (error) {
+  //     const errorMessage =
+  //       error instanceof Error ? error.message : "Upload failed";
+  //     setPdfError(errorMessage);
+  //     modalActions.openError("Upload Failed", errorMessage);
+  //   } finally {
+  //     setUploadingPdf(null);
+  //   }
+  // };
 
   const handleDeletePdfClick = (
     gptId: string,
@@ -241,50 +387,50 @@ export default function AdminClient() {
     }
   };
 
-  const handleReplacePdf = async (
-    gptId: string,
-    oldOpenaiFileId: string,
-    newFile: File
-  ) => {
-    setUploadingPdf(gptId);
-    setPdfError(null);
+  // const handleReplacePdf = async (
+  //   gptId: string,
+  //   oldOpenaiFileId: string,
+  //   newFile: File
+  // ) => {
+  //   setUploadingPdf(gptId);
+  //   setPdfError(null);
 
-    try {
-      // Delete old PDF
-      const deleteResponse = await fetch("/api/delete-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gptId, openaiFileId: oldOpenaiFileId })
-      });
+  //   try {
+  //     // Delete old PDF
+  //     const deleteResponse = await fetch("/api/delete-pdf", {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify({ gptId, openaiFileId: oldOpenaiFileId })
+  //     });
 
-      const deleteData = await deleteResponse.json();
-      if (!deleteResponse.ok)
-        throw new Error(deleteData.error || "Delete failed");
+  //     const deleteData = await deleteResponse.json();
+  //     if (!deleteResponse.ok)
+  //       throw new Error(deleteData.error || "Delete failed");
 
-      // Upload new PDF
-      const formData = new FormData();
-      formData.append("files", newFile);
-      formData.append("gptId", gptId);
+  //     // Upload new PDF
+  //     const formData = new FormData();
+  //     formData.append("files", newFile);
+  //     formData.append("gptId", gptId);
 
-      const uploadResponse = await fetch("/api/upload-pdf", {
-        method: "POST",
-        body: formData
-      });
+  //     const uploadResponse = await fetch("/api/upload-pdf", {
+  //       method: "POST",
+  //       body: formData
+  //     });
 
-      const uploadData = await uploadResponse.json();
-      if (!uploadResponse.ok)
-        throw new Error(uploadData.error || "Upload failed");
+  //     const uploadData = await uploadResponse.json();
+  //     if (!uploadResponse.ok)
+  //       throw new Error(uploadData.error || "Upload failed");
 
-      modalActions.openSuccess("PDF Replaced", "PDF replaced successfully!");
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Replace failed";
-      setPdfError(errorMessage);
-      modalActions.openError("Replace Failed", errorMessage);
-    } finally {
-      setUploadingPdf(null);
-    }
-  };
+  //     modalActions.openSuccess("PDF Replaced", "PDF replaced successfully!");
+  //   } catch (error) {
+  //     const errorMessage =
+  //       error instanceof Error ? error.message : "Replace failed";
+  //     setPdfError(errorMessage);
+  //     modalActions.openError("Replace Failed", errorMessage);
+  //   } finally {
+  //     setUploadingPdf(null);
+  //   }
+  // };
 
   // General settings handler
   const handleSaveGeneralSettings = async () => {

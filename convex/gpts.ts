@@ -194,12 +194,76 @@ export const deleteGpt = mutation({
  * These handle PDF file associations with GPTs
  */
 
+// export const addPdfToGpt = mutation({
+//   args: {
+//     gptId: v.string(),
+//     vectorStoreId: v.string(),
+//     fileName: v.string(),
+//     openaiFileId: v.string()
+//   },
+//   handler: async ({ db }, args) => {
+//     const gpt = await db
+//       .query("gpts")
+//       .withIndex("by_gptId", (q) => q.eq("gptId", args.gptId))
+//       .first();
+
+//     if (!gpt) throw new Error("GPT not found");
+
+//     const pdfFiles = gpt.pdfFiles ?? [];
+
+//     await db.patch(gpt._id, {
+//       vectorStoreId: args.vectorStoreId,
+//       pdfFiles: [
+//         ...pdfFiles,
+//         {
+//           fileName: args.fileName,
+//           openaiFileId: args.openaiFileId,
+//           uploadedAt: Date.now()
+//         }
+//       ],
+//       updatedAt: Date.now()
+//     });
+//   }
+// });
+
+// export const removePdfFromGpt = mutation({
+//   args: {
+//     gptId: v.string(),
+//     openaiFileId: v.string()
+//   },
+//   handler: async ({ db }, { gptId, openaiFileId }) => {
+//     const gpt = await db
+//       .query("gpts")
+//       .withIndex("by_gptId", (q) => q.eq("gptId", gptId))
+//       .first();
+
+//     if (!gpt) throw new Error("GPT not found");
+
+//     const updatedFiles = (gpt.pdfFiles || []).filter(
+//       (pdf: any) => pdf.openaiFileId !== openaiFileId
+//     );
+
+//     await db.patch(gpt._id, {
+//       pdfFiles: updatedFiles
+//     });
+//   }
+// });
+
+/**
+ * HELPER FUNCTIONS
+ * These combine general settings with GPT-specific settings
+ */
+// convex/gpts.ts
+
+// ✅ UPDATE this mutation (add new fields)
 export const addPdfToGpt = mutation({
   args: {
     gptId: v.string(),
     vectorStoreId: v.string(),
     fileName: v.string(),
-    openaiFileId: v.string()
+    openaiFileId: v.string(),
+    convexStorageId: v.id("_storage"), // ✅ ADD THIS
+    fileSize: v.number() // ✅ ADD THIS
   },
   handler: async ({ db }, args) => {
     const gpt = await db
@@ -218,6 +282,8 @@ export const addPdfToGpt = mutation({
         {
           fileName: args.fileName,
           openaiFileId: args.openaiFileId,
+          convexStorageId: args.convexStorageId, // ✅ ADD THIS
+          fileSize: args.fileSize, // ✅ ADD THIS
           uploadedAt: Date.now()
         }
       ],
@@ -226,12 +292,13 @@ export const addPdfToGpt = mutation({
   }
 });
 
+// ✅ UPDATE this mutation (delete from Convex Storage too)
 export const removePdfFromGpt = mutation({
   args: {
     gptId: v.string(),
     openaiFileId: v.string()
   },
-  handler: async ({ db }, { gptId, openaiFileId }) => {
+  handler: async ({ db, storage }, { gptId, openaiFileId }) => {
     const gpt = await db
       .query("gpts")
       .withIndex("by_gptId", (q) => q.eq("gptId", gptId))
@@ -239,6 +306,23 @@ export const removePdfFromGpt = mutation({
 
     if (!gpt) throw new Error("GPT not found");
 
+    // ✅ Find the file to delete
+    const fileToDelete = (gpt.pdfFiles || []).find(
+      (pdf: any) => pdf.openaiFileId === openaiFileId
+    );
+
+    // ✅ Delete from Convex storage
+    if (fileToDelete?.convexStorageId) {
+      try {
+        await storage.delete(fileToDelete.convexStorageId);
+        console.log(`[Convex Storage] Deleted file: ${fileToDelete.fileName}`);
+      } catch (error) {
+        console.error("[Convex Storage] Delete error:", error);
+        // Continue even if storage delete fails
+      }
+    }
+
+    // Remove from metadata
     const updatedFiles = (gpt.pdfFiles || []).filter(
       (pdf: any) => pdf.openaiFileId !== openaiFileId
     );
@@ -248,12 +332,6 @@ export const removePdfFromGpt = mutation({
     });
   }
 });
-
-/**
- * HELPER FUNCTIONS
- * These combine general settings with GPT-specific settings
- */
-
 // Get combined settings for a specific GPT (used in chat API)
 export const getGptWithDefaults = query({
   args: {
