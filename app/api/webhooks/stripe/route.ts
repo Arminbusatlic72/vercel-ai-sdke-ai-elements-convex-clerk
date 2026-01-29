@@ -1354,25 +1354,41 @@
 //   return planType;
 // }
 
-import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic"; // Ensure raw body reading works
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2025-12-15"
+});
 
-// ✅ STEP 1: Verify Stripe Signature
-async function verifyStripeSignature(
-  body: string,
+// -------------------- Helper: Read Raw Body --------------------
+async function getRawBody(req: Request): Promise<Buffer> {
+  const reader = req.body?.getReader();
+  if (!reader) return Buffer.from("");
+
+  const chunks: Uint8Array[] = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
+
+// -------------------- Verify Stripe Signature --------------------
+function verifyStripeSignature(
+  rawBody: Buffer,
   signature: string
-): Promise<Stripe.Event> {
+): Stripe.Event {
   try {
     return stripe.webhooks.constructEvent(
-      body,
+      rawBody,
       signature,
       process.env.STRIPE_WEBHOOK_SECRET!
     );
@@ -1381,62 +1397,7 @@ async function verifyStripeSignature(
   }
 }
 
-// ✅ STEP 2: Route Handler
-export async function POST(request: Request) {
-  const body = await request.text();
-  const headersList = await headers();
-  const signature = headersList.get("stripe-signature");
-
-  if (!signature) {
-    console.error("❌ No stripe-signature header found");
-    return NextResponse.json({ error: "No signature header" }, { status: 400 });
-  }
-
-  try {
-    const event = await verifyStripeSignature(body, signature);
-    console.log(`✅ Verified Stripe event: ${event.type}`);
-
-    // Route to appropriate handler
-    const result = await handleStripeEvent(event);
-    return NextResponse.json({ received: result.success });
-  } catch (error: any) {
-    console.error(`❌ Webhook error: ${error.message}`);
-    return NextResponse.json({ error: error.message }, { status: 400 });
-  }
-}
-
-// ✅ STEP 3: Event Router
-async function handleStripeEvent(event: Stripe.Event) {
-  switch (event.type) {
-    case "customer.subscription.created":
-    case "customer.subscription.updated":
-      return await handleSubscriptionUpdate(
-        event.data.object as Stripe.Subscription
-      );
-
-    case "customer.subscription.deleted":
-      return await handleSubscriptionDeleted(
-        event.data.object as Stripe.Subscription
-      );
-
-    case "invoice.payment_succeeded":
-    case "invoice.paid":
-      return await handleInvoicePaymentSucceeded(
-        event.data.object as Stripe.Invoice
-      );
-
-    case "invoice.payment_failed":
-      return await handleInvoicePaymentFailed(
-        event.data.object as Stripe.Invoice
-      );
-
-    default:
-      console.log(`Unhandled event: ${event.type}`);
-      return { success: true };
-  }
-}
-
-// ✅ Helper function to sync subscription via HTTP action
+// -------------------- Convex Sync --------------------
 async function syncSubscriptionToConvex(data: {
   clerkUserId: string;
   stripeSubscriptionId: string;
@@ -1471,52 +1432,73 @@ async function syncSubscriptionToConvex(data: {
   return result;
 }
 
-// ✅ Handle subscription creation/update
+// -------------------- Map Stripe Price ID to Package --------------------
+function getPricePackageMapping(
+  priceId: string
+): "sandbox" | "clientProject" | "basic" | "pro" {
+  const mapping: Record<string, "sandbox" | "clientProject" | "basic" | "pro"> =
+    {
+      [process.env.STRIPE_PRICE_SANDBOX_LEVEL_MONTHLY || ""]: "sandbox",
+      [process.env.STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY || ""]:
+        "clientProject",
+      [process.env.STRIPE_PRICE_BASIC_ID || ""]: "basic",
+      [process.env.STRIPE_PRICE_PRO_ID || ""]: "pro",
+
+      // Free plans → sandbox
+      [process.env.STRIPE_PRICE_ANALYZING_TRENDS_FREE || ""]: "sandbox",
+      [process.env.STRIPE_PRICE_SUMMER_SANDBOX_FREE || ""]: "sandbox",
+      [process.env.STRIPE_PRICE_WORKSHOP_SANDBOX_FREE || ""]: "sandbox",
+      [process.env.STRIPE_PRICE_CLASSROOM_SPEAKER_FREE || ""]: "sandbox",
+      [process.env.STRIPE_PRICE_SUBSTACK_GPT_FREE || ""]: "sandbox"
+    };
+
+  const planType = mapping[priceId];
+
+  if (!planType) {
+    throw new Error(
+      `Cannot map price ID "${priceId}" to a valid plan type. ` +
+        `Valid types: sandbox, clientProject, basic, pro.`
+    );
+  }
+
+  return planType;
+}
+
+// -------------------- Handle Subscription Creation/Update --------------------
 async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
   console.log(`🔄 Processing subscription: ${subscription.id}`);
 
   try {
     const customerId = subscription.customer as string;
     const priceId = subscription.items.data[0]?.price.id;
-
     if (!priceId) throw new Error("No price found in subscription");
 
     const packageKey = getPricePackageMapping(priceId);
     let clerkUserId = subscription.metadata?.clerkUserId;
 
-    // Fallback 1: Look up by stripeCustomerId in Convex
+    // Fallback 1: Convex lookup
     if (!clerkUserId) {
-      console.log(`⚠️  Looking up user by stripeCustomerId in Convex...`);
       const users = await convex.query(api.users.getByStripeCustomerId, {
         stripeCustomerId: customerId
       });
-      if (users && users.length > 0) {
-        clerkUserId = users[0].clerkId;
-        console.log(`✅ Found clerkUserId from Convex: ${clerkUserId}`);
-      }
+      if (users && users.length > 0) clerkUserId = users[0].clerkId;
     }
 
-    // Fallback 2: Check Stripe customer metadata
+    // Fallback 2: Stripe customer metadata
     if (!clerkUserId) {
-      console.log(`⚠️  Checking Stripe customer metadata...`);
       const customer = await stripe.customers.retrieve(customerId);
       if ("deleted" in customer && customer.deleted) {
         throw new Error(`Customer ${customerId} has been deleted`);
       }
       clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
-      if (clerkUserId) {
-        console.log(`✅ Found clerkUserId from Stripe: ${clerkUserId}`);
-      }
     }
 
     if (!clerkUserId) {
       throw new Error(
-        `Cannot find clerkUserId for subscription ${subscription.id}. ` +
-          `Customer ID: ${customerId}`
+        `Cannot find clerkUserId for subscription ${subscription.id}`
       );
     }
 
-    // ✅ Call Convex HTTP action
     await syncSubscriptionToConvex({
       clerkUserId,
       stripeSubscriptionId: subscription.id,
@@ -1525,8 +1507,9 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
       priceId,
       planType: packageKey,
       currentPeriodStart:
-        subscription.items.data[0].current_period_start * 1000,
-      currentPeriodEnd: subscription.items.data[0].current_period_end * 1000,
+        (subscription.items.data[0].current_period_start || 0) * 1000,
+      currentPeriodEnd:
+        (subscription.items.data[0].current_period_end || 0) * 1000,
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
       maxGpts: packageKey === "pro" ? 6 : 3
     });
@@ -1539,7 +1522,7 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
   }
 }
 
-// ✅ Handle subscription deletion
+// -------------------- Handle Subscription Deletion --------------------
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   console.log(`🗑️ Handling subscription deletion: ${subscription.id}`);
 
@@ -1547,17 +1530,15 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     const customerId = subscription.customer as string;
     let clerkUserId = subscription.metadata?.clerkUserId;
 
-    // Fallback 1: Look up by stripeCustomerId in Convex
+    // Fallback 1: Convex lookup
     if (!clerkUserId) {
       const users = await convex.query(api.users.getByStripeCustomerId, {
         stripeCustomerId: customerId
       });
-      if (users && users.length > 0) {
-        clerkUserId = users[0].clerkId;
-      }
+      if (users && users.length > 0) clerkUserId = users[0].clerkId;
     }
 
-    // Fallback 2: Check Stripe customer metadata
+    // Fallback 2: Stripe customer metadata
     if (!clerkUserId) {
       const customer = await stripe.customers.retrieve(customerId);
       if ("deleted" in customer && customer.deleted) {
@@ -1574,7 +1555,6 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
       );
     }
 
-    // ✅ Call Convex HTTP action
     await syncSubscriptionToConvex({
       clerkUserId,
       stripeSubscriptionId: subscription.id,
@@ -1598,26 +1578,21 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   }
 }
 
-// ✅ Handle invoice payment succeeded - FIXED VERSION
+// -------------------- Handle Invoice Payment Succeeded --------------------
 async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
   console.log(`💰 Invoice payment succeeded: ${invoice.id}`);
 
   try {
-    // ✅ FIX: Check multiple places for subscription ID
     let subscriptionId: string | null = null;
 
-    // Method 1: Check in lines.data (most common for subscription invoices)
-    const lineWithSubscription = invoice.lines.data.find(
-      (line) => line.subscription
-    );
-    if (lineWithSubscription?.subscription) {
+    const lineWithSub = invoice.lines.data.find((line) => line.subscription);
+    if (lineWithSub?.subscription) {
       subscriptionId =
-        typeof lineWithSubscription.subscription === "string"
-          ? lineWithSubscription.subscription
-          : lineWithSubscription.subscription.id;
+        typeof lineWithSub.subscription === "string"
+          ? lineWithSub.subscription
+          : lineWithSub.subscription.id;
     }
 
-    // Method 2: Check in parent.subscription_details (for new Stripe API versions)
     if (!subscriptionId && invoice.parent) {
       const parent = invoice.parent as any;
       if (
@@ -1628,17 +1603,9 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
       }
     }
 
-    if (!subscriptionId) {
-      console.log("⏭️ No subscription for invoice, skipping...");
-      return { success: true };
-    }
+    if (!subscriptionId) return { success: true };
 
-    console.log(`✅ Found subscription: ${subscriptionId}`);
-
-    // Get the subscription
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-
-    // Trigger subscription update to sync latest status
     return await handleSubscriptionUpdate(subscription);
   } catch (error) {
     console.error(`❌ Invoice payment processing failed:`, error);
@@ -1646,35 +1613,27 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
   }
 }
 
-// ✅ Handle invoice payment failed
+// -------------------- Handle Invoice Payment Failed --------------------
 async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   console.log(`❌ Invoice payment failed: ${invoice.id}`);
 
   try {
     const subscriptionId =
-      (invoice.lines.data[0]?.subscription as string | null) || null;
+      (invoice.lines.data[0]?.subscription as string | null) ?? null;
     const customerId = invoice.customer as string;
 
-    if (!subscriptionId || !customerId) {
-      console.log(`⏭️ Missing subscription/customer, skipping...`);
-      return { success: true };
-    }
+    if (!subscriptionId || !customerId) return { success: true };
 
-    // Get subscription
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    let clerkUserId = subscription.metadata?.clerkUserId;
 
-    // Fallback 1: Look up by stripeCustomerId in Convex
+    let clerkUserId = subscription.metadata?.clerkUserId;
     if (!clerkUserId) {
       const users = await convex.query(api.users.getByStripeCustomerId, {
         stripeCustomerId: customerId
       });
-      if (users && users.length > 0) {
-        clerkUserId = users[0].clerkId;
-      }
+      if (users && users.length > 0) clerkUserId = users[0].clerkId;
     }
 
-    // Fallback 2: Check Stripe customer metadata
     if (!clerkUserId) {
       const customer = await stripe.customers.retrieve(customerId);
       if ("deleted" in customer && customer.deleted) {
@@ -1694,7 +1653,6 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
     const priceId = subscription.items.data[0]?.price.id || "";
     const packageKey = getPricePackageMapping(priceId);
 
-    // ✅ Call Convex HTTP action
     await syncSubscriptionToConvex({
       clerkUserId,
       stripeSubscriptionId: subscription.id,
@@ -1703,8 +1661,9 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
       priceId,
       planType: packageKey,
       currentPeriodStart:
-        subscription.items.data[0].current_period_start * 1000,
-      currentPeriodEnd: subscription.items.data[0].current_period_end * 1000,
+        (subscription.items.data[0]?.current_period_start || 0) * 1000,
+      currentPeriodEnd:
+        (subscription.items.data[0]?.current_period_end || 0) * 1000,
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
       maxGpts: packageKey === "pro" ? 6 : 3
     });
@@ -1717,36 +1676,58 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   }
 }
 
-// Helper: Map Stripe price ID to package (valid schema values)
-function getPricePackageMapping(
-  priceId: string
-): "sandbox" | "clientProject" | "basic" | "pro" {
-  const mapping: Record<string, "sandbox" | "clientProject" | "basic" | "pro"> =
-    {
-      // Paid plans
-      [process.env.STRIPE_PRICE_SANDBOX_LEVEL_MONTHLY || ""]: "sandbox",
-      [process.env.STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY || ""]:
-        "clientProject",
-      [process.env.STRIPE_PRICE_BASIC_ID || ""]: "basic",
-      [process.env.STRIPE_PRICE_PRO_ID || ""]: "pro",
+// -------------------- Event Router --------------------
+async function handleStripeEvent(event: Stripe.Event) {
+  switch (event.type) {
+    case "customer.subscription.created":
+    case "customer.subscription.updated":
+      return await handleSubscriptionUpdate(
+        event.data.object as Stripe.Subscription
+      );
 
-      // Free plans - map to "sandbox" plan type
-      [process.env.STRIPE_PRICE_ANALYZING_TRENDS_FREE || ""]: "sandbox",
-      [process.env.STRIPE_PRICE_SUMMER_SANDBOX_FREE || ""]: "sandbox",
-      [process.env.STRIPE_PRICE_WORKSHOP_SANDBOX_FREE || ""]: "sandbox",
-      [process.env.STRIPE_PRICE_CLASSROOM_SPEAKER_FREE || ""]: "sandbox",
-      [process.env.STRIPE_PRICE_SUBSTACK_GPT_FREE || ""]: "sandbox"
-    };
+    case "customer.subscription.deleted":
+      return await handleSubscriptionDeleted(
+        event.data.object as Stripe.Subscription
+      );
 
-  const planType = mapping[priceId];
+    case "invoice.payment_succeeded":
+    case "invoice.paid":
+      return await handleInvoicePaymentSucceeded(
+        event.data.object as Stripe.Invoice
+      );
 
-  if (!planType) {
-    throw new Error(
-      `Cannot map price ID "${priceId}" to a valid plan type. ` +
-        `Valid types are: "sandbox", "clientProject", "basic", "pro". ` +
-        `Please check that the price ID exists in your Stripe account and is configured in environment variables.`
+    case "invoice.payment_failed":
+      return await handleInvoicePaymentFailed(
+        event.data.object as Stripe.Invoice
+      );
+
+    default:
+      console.log(`Unhandled event: ${event.type}`);
+      return { success: true };
+  }
+}
+
+// -------------------- Main Route Handler --------------------
+export async function POST(request: Request) {
+  const rawBody = await getRawBody(request);
+  const signature = request.headers.get("stripe-signature");
+
+  if (!signature) {
+    return NextResponse.json(
+      { error: "Missing stripe-signature" },
+      { status: 400 }
     );
   }
 
-  return planType;
+  let event: Stripe.Event;
+  try {
+    event = verifyStripeSignature(rawBody, signature);
+  } catch (err: any) {
+    console.error(`❌ Signature verification failed:`, err.message);
+    return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+  }
+
+  console.log(`✅ Verified Stripe event: ${event.type}`);
+  const result = await handleStripeEvent(event);
+  return NextResponse.json({ received: result.success });
 }
