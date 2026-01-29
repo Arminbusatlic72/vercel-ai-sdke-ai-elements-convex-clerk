@@ -226,31 +226,80 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 }
 
 // Handle invoice payment succeeded
+// async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
+//   console.log(`💰 Invoice payment succeeded: ${invoice.id}`);
+
+//   try {
+//     // const subscriptionId = invoice.lines.data[0]?.subscription as string | null;
+//     const subscriptionId =
+//       (invoice.lines.data.find((l) => l.subscription)?.subscription as
+//         | string
+//         | null) ?? null;
+
+//     if (!subscriptionId) {
+//       console.log("⏭️ No subscription for invoice, skipping...");
+//       return { success: true };
+//     }
+
+//     if (!subscriptionId) {
+//       console.log(`⏭️ No subscription for invoice, skipping...`);
+//       return { success: true };
+//     }
+
+//     // Get the subscription
+//     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
+//     // Trigger subscription update to sync latest status
+//     return await handleSubscriptionUpdate(subscription);
+//   } catch (error) {
+//     console.error(`❌ Invoice payment processing failed:`, error);
+//     return { success: false };
+//   }
+// }
+
 async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
   console.log(`💰 Invoice payment succeeded: ${invoice.id}`);
 
   try {
-    // const subscriptionId = invoice.lines.data[0]?.subscription as string | null;
+    // 1️⃣ Check if this invoice is linked to a subscription
     const subscriptionId =
-      (invoice.lines.data.find((l) => l.subscription)?.subscription as
+      (invoice.lines.data.find((line) => line.subscription)?.subscription as
         | string
         | null) ?? null;
 
-    if (!subscriptionId) {
-      console.log("⏭️ No subscription for invoice, skipping...");
-      return { success: true };
+    if (subscriptionId) {
+      // ✅ Subscription invoice – trigger subscription sync
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      return await handleSubscriptionUpdate(subscription);
     }
 
-    if (!subscriptionId) {
-      console.log(`⏭️ No subscription for invoice, skipping...`);
-      return { success: true };
+    // 2️⃣ No subscription → possibly a one-time payment
+    const amountPaid = invoice.amount_paid ?? 0;
+    const customerId = invoice.customer as string;
+
+    if (amountPaid > 0 && customerId) {
+      console.log(
+        `💳 One-time payment detected: ${amountPaid} ${invoice.currency.toUpperCase()} for customer ${customerId}`
+      );
+
+      // Optional: sync one-time payment to Convex or your DB
+      await convex.mutation(api.payments.recordOneTimePayment, {
+        stripeInvoiceId: invoice.id,
+        stripeCustomerId: customerId,
+        amount: amountPaid,
+        currency: invoice.currency,
+        status: "succeeded",
+        paidAt: invoice.status_transitions?.paid_at
+          ? invoice.status_transitions.paid_at * 1000
+          : Date.now()
+      });
+
+      console.log(`✅ One-time payment recorded in Convex`);
+    } else {
+      console.log(`⏭️ Invoice has no subscription and no payment, skipping...`);
     }
 
-    // Get the subscription
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-
-    // Trigger subscription update to sync latest status
-    return await handleSubscriptionUpdate(subscription);
+    return { success: true };
   } catch (error) {
     console.error(`❌ Invoice payment processing failed:`, error);
     return { success: false };
