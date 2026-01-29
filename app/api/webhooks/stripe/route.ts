@@ -1321,8 +1321,9 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
       status: "past_due",
       priceId,
       planType: packageKey,
-      currentPeriodStart: subscription.start_date * 1000,
-      currentPeriodEnd: subscription.ended_at * 1000,
+      currentPeriodStart:
+        subscription.items.data[0].current_period_start * 1000,
+      currentPeriodEnd: subscription.items.data[0].current_period_end * 1000,
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
       maxGpts: packageKey === "pro" ? 6 : 3
     });
