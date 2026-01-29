@@ -1364,7 +1364,7 @@ export const dynamic = "force-dynamic"; // Ensure raw body reading works
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-12-15"
+  apiVersion: "2025-12-15.clover"
 });
 
 // -------------------- Helper: Read Raw Body --------------------
