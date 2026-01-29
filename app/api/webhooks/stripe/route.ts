@@ -300,271 +300,271 @@
 // //   return { success: true };
 // // }
 
-// // // app/api/stripe-webhook/route.ts
+// // // // app/api/stripe-webhook/route.ts
+// // // import { NextResponse } from "next/server";
+// // // import { auth } from "@clerk/nextjs/server";
+// // // import { ConvexHttpClient } from "convex/browser";
+// // // import { api } from "@/convex/_generated/api";
+
+// // // const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+// // // export async function POST(request: Request) {
+// // //   try {
+// // //     const { userId } = await auth(); // <-- THIS LINE IS REQUIRED
+
+// // //     if (!userId) {
+// // //       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+// // //     }
+
+// // //     const { stripePaymentMethodId, priceId, email, packageId, tier, maxGpts } =
+// // //       await request.json();
+
+// // //     const result = await convex.action(api.stripe.createSubscription, {
+// // //       clerkUserId: userId,
+// // //       stripePaymentMethodId: stripePaymentMethodId ?? null,
+// // //       priceId,
+// // //       email
+// // //     });
+
+// // //     // UPDATE USER SUBSCRIPTION
+// // //     await convex.mutation(api.users.updateUserSubscription, {
+// // //       clerkId: userId, // correct field name
+// // //       stripeSubscriptionId: result.subscriptionId,
+// // //       subscriptionStatus: result.status,
+// // //       currentPeriodEnd: String(result.currentPeriodEnd),
+// // //       maxGpts: selectedPackage.maxGpts,
+// // //       packageId: selectedPackage._id,
+// // //       tier: selectedPackage.tier
+// // //     });
+
+// // //     return NextResponse.json(result);
+// // //   } catch (error: any) {
+// // //     console.error("API Error:", error);
+// // //     return NextResponse.json(
+// // //       { error: error.message || "Internal server error" },
+// // //       { status: 500 }
+// // //     );
+// // //   }
+// // // }
+
+// // // app/api/webhooks/stripe/route.ts
 // // import { NextResponse } from "next/server";
-// // import { auth } from "@clerk/nextjs/server";
+// // import { headers } from "next/headers";
+// // import Stripe from "stripe";
 // // import { ConvexHttpClient } from "convex/browser";
 // // import { api } from "@/convex/_generated/api";
 
+// // const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+// //   apiVersion: "2024-12-18.acacia"
+// // });
+
 // // const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
-// // export async function POST(request: Request) {
-// //   try {
-// //     const { userId } = await auth(); // <-- THIS LINE IS REQUIRED
+// // // This is your Stripe webhook signing secret from the Stripe Dashboard
+// // const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 
-// //     if (!userId) {
-// //       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+// // export async function POST(req: Request) {
+// //   try {
+// //     const body = await req.text();
+// //     const headersList = await headers();
+// //     const signature = headersList.get("stripe-signature");
+
+// //     if (!signature) {
+// //       console.error("❌ No Stripe signature found");
+// //       return NextResponse.json({ error: "No signature" }, { status: 400 });
 // //     }
 
-// //     const { stripePaymentMethodId, priceId, email, packageId, tier, maxGpts } =
-// //       await request.json();
+// //     // Verify the webhook signature
+// //     let event: Stripe.Event;
+// //     try {
+// //       event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
+// //     } catch (err: any) {
+// //       console.error("❌ Webhook signature verification failed:", err.message);
+// //       return NextResponse.json(
+// //         { error: `Webhook Error: ${err.message}` },
+// //         { status: 400 }
+// //       );
+// //     }
 
-// //     const result = await convex.action(api.stripe.createSubscription, {
-// //       clerkUserId: userId,
-// //       stripePaymentMethodId: stripePaymentMethodId ?? null,
-// //       priceId,
-// //       email
-// //     });
+// //     console.log("✅ Webhook received:", event.type);
 
-// //     // UPDATE USER SUBSCRIPTION
-// //     await convex.mutation(api.users.updateUserSubscription, {
-// //       clerkId: userId, // correct field name
-// //       stripeSubscriptionId: result.subscriptionId,
-// //       subscriptionStatus: result.status,
-// //       currentPeriodEnd: String(result.currentPeriodEnd),
-// //       maxGpts: selectedPackage.maxGpts,
-// //       packageId: selectedPackage._id,
-// //       tier: selectedPackage.tier
-// //     });
+// //     // Handle the event
+// //     switch (event.type) {
+// //       case "customer.subscription.created":
+// //       case "customer.subscription.updated": {
+// //         const subscription = event.data.object as Stripe.Subscription;
+// //         await handleSubscriptionChange(subscription, event.type);
+// //         break;
+// //       }
 
-// //     return NextResponse.json(result);
+// //       case "customer.subscription.deleted": {
+// //         const subscription = event.data.object as Stripe.Subscription;
+// //         await handleSubscriptionCancellation(subscription);
+// //         break;
+// //       }
+
+// //       case "invoice.payment_succeeded": {
+// //         const invoice = event.data.object as Stripe.Invoice;
+// //         await handlePaymentSucceeded(invoice);
+// //         break;
+// //       }
+
+// //       case "invoice.payment_failed": {
+// //         const invoice = event.data.object as Stripe.Invoice;
+// //         await handlePaymentFailed(invoice);
+// //         break;
+// //       }
+
+// //       default:
+// //         console.log(`ℹ️ Unhandled event type: ${event.type}`);
+// //     }
+
+// //     return NextResponse.json({ received: true });
 // //   } catch (error: any) {
-// //     console.error("API Error:", error);
+// //     console.error("❌ Webhook handler error:", error);
 // //     return NextResponse.json(
-// //       { error: error.message || "Internal server error" },
+// //       { error: "Webhook handler failed" },
 // //       { status: 500 }
 // //     );
 // //   }
 // // }
 
-// // app/api/webhooks/stripe/route.ts
-// import { NextResponse } from "next/server";
-// import { headers } from "next/headers";
-// import Stripe from "stripe";
-// import { ConvexHttpClient } from "convex/browser";
-// import { api } from "@/convex/_generated/api";
+// // async function handleSubscriptionChange(
+// //   subscription: Stripe.Subscription,
+// //   eventType: string
+// // ) {
+// //   console.log(`📝 Processing ${eventType}:`, subscription.id);
 
-// const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-//   apiVersion: "2024-12-18.acacia"
-// });
+// //   const customerId = subscription.customer as string;
+// //   const priceId = subscription.items.data[0]?.price.id;
 
-// const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+// //   if (!priceId) {
+// //     console.error("❌ No price ID found in subscription");
+// //     return;
+// //   }
 
-// // This is your Stripe webhook signing secret from the Stripe Dashboard
-// const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
+// //   // Get user by Stripe customer ID
+// //   const user = await convex.query(api.users.getUserByStripeCustomerId, {
+// //     stripeCustomerId: customerId
+// //   });
 
-// export async function POST(req: Request) {
-//   try {
-//     const body = await req.text();
-//     const headersList = await headers();
-//     const signature = headersList.get("stripe-signature");
+// //   if (!user) {
+// //     console.error("❌ No user found for customer:", customerId);
+// //     return;
+// //   }
 
-//     if (!signature) {
-//       console.error("❌ No Stripe signature found");
-//       return NextResponse.json({ error: "No signature" }, { status: 400 });
-//     }
+// //   // Get package details from Convex
+// //   const packageData = await convex.query(api.packages.getPackageByPriceId, {
+// //     stripePriceId: priceId
+// //   });
 
-//     // Verify the webhook signature
-//     let event: Stripe.Event;
-//     try {
-//       event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
-//     } catch (err: any) {
-//       console.error("❌ Webhook signature verification failed:", err.message);
-//       return NextResponse.json(
-//         { error: `Webhook Error: ${err.message}` },
-//         { status: 400 }
-//       );
-//     }
+// //   if (!packageData) {
+// //     console.error("❌ No package found for price:", priceId);
+// //     return;
+// //   }
 
-//     console.log("✅ Webhook received:", event.type);
+// //   // Sync to Convex
+// //   await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
+// //     clerkUserId: user.clerkId,
+// //     stripeSubscriptionId: subscription.id,
+// //     stripeCustomerId: customerId,
+// //     status: subscription.status,
+// //     priceId,
+// //     packageKey: packageData.key,
+// //     currentPeriodStart: subscription.current_period_start,
+// //     currentPeriodEnd: subscription.current_period_end,
+// //     cancelAtPeriodEnd: subscription.cancel_at_period_end,
+// //     maxGpts: packageData.maxGpts || 0
+// //   });
 
-//     // Handle the event
-//     switch (event.type) {
-//       case "customer.subscription.created":
-//       case "customer.subscription.updated": {
-//         const subscription = event.data.object as Stripe.Subscription;
-//         await handleSubscriptionChange(subscription, event.type);
-//         break;
-//       }
+// //   console.log(`✅ Subscription synced for user: ${user.clerkId}`);
+// // }
 
-//       case "customer.subscription.deleted": {
-//         const subscription = event.data.object as Stripe.Subscription;
-//         await handleSubscriptionCancellation(subscription);
-//         break;
-//       }
+// // async function handleSubscriptionCancellation(
+// //   subscription: Stripe.Subscription
+// // ) {
+// //   console.log("🚫 Processing cancellation:", subscription.id);
 
-//       case "invoice.payment_succeeded": {
-//         const invoice = event.data.object as Stripe.Invoice;
-//         await handlePaymentSucceeded(invoice);
-//         break;
-//       }
+// //   const customerId = subscription.customer as string;
 
-//       case "invoice.payment_failed": {
-//         const invoice = event.data.object as Stripe.Invoice;
-//         await handlePaymentFailed(invoice);
-//         break;
-//       }
+// //   const user = await convex.query(api.users.getUserByStripeCustomerId, {
+// //     stripeCustomerId: customerId
+// //   });
 
-//       default:
-//         console.log(`ℹ️ Unhandled event type: ${event.type}`);
-//     }
+// //   if (!user) {
+// //     console.error("❌ No user found for customer:", customerId);
+// //     return;
+// //   }
 
-//     return NextResponse.json({ received: true });
-//   } catch (error: any) {
-//     console.error("❌ Webhook handler error:", error);
-//     return NextResponse.json(
-//       { error: "Webhook handler failed" },
-//       { status: 500 }
-//     );
-//   }
-// }
+// //   await convex.mutation(api.subscriptions.cancelUserSubscription, {
+// //     clerkUserId: user.clerkId,
+// //     stripeSubscriptionId: subscription.id,
+// //     canceledAt: Math.floor(Date.now() / 1000)
+// //   });
 
-// async function handleSubscriptionChange(
-//   subscription: Stripe.Subscription,
-//   eventType: string
-// ) {
-//   console.log(`📝 Processing ${eventType}:`, subscription.id);
+// //   console.log(`✅ Subscription canceled for user: ${user.clerkId}`);
+// // }
 
-//   const customerId = subscription.customer as string;
-//   const priceId = subscription.items.data[0]?.price.id;
+// // async function handlePaymentSucceeded(invoice: Stripe.Invoice) {
+// //   console.log("💰 Payment succeeded:", invoice.id);
 
-//   if (!priceId) {
-//     console.error("❌ No price ID found in subscription");
-//     return;
-//   }
+// //   if (!invoice.subscription) {
+// //     console.log("ℹ️ Invoice not related to subscription");
+// //     return;
+// //   }
 
-//   // Get user by Stripe customer ID
-//   const user = await convex.query(api.users.getUserByStripeCustomerId, {
-//     stripeCustomerId: customerId
-//   });
+// //   const customerId = invoice.customer as string;
 
-//   if (!user) {
-//     console.error("❌ No user found for customer:", customerId);
-//     return;
-//   }
+// //   const user = await convex.query(api.users.getUserByStripeCustomerId, {
+// //     stripeCustomerId: customerId
+// //   });
 
-//   // Get package details from Convex
-//   const packageData = await convex.query(api.packages.getPackageByPriceId, {
-//     stripePriceId: priceId
-//   });
+// //   if (!user) {
+// //     console.error("❌ No user found for customer:", customerId);
+// //     return;
+// //   }
 
-//   if (!packageData) {
-//     console.error("❌ No package found for price:", priceId);
-//     return;
-//   }
+// //   // Update subscription status to active if it was past_due
+// //   const subscriptionId = invoice.subscription as string;
 
-//   // Sync to Convex
-//   await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
-//     clerkUserId: user.clerkId,
-//     stripeSubscriptionId: subscription.id,
-//     stripeCustomerId: customerId,
-//     status: subscription.status,
-//     priceId,
-//     packageKey: packageData.key,
-//     currentPeriodStart: subscription.current_period_start,
-//     currentPeriodEnd: subscription.current_period_end,
-//     cancelAtPeriodEnd: subscription.cancel_at_period_end,
-//     maxGpts: packageData.maxGpts || 0
-//   });
+// //   await convex.mutation(api.subscriptions.updateSubscriptionStatus, {
+// //     clerkUserId: user.clerkId,
+// //     stripeSubscriptionId: subscriptionId,
+// //     status: "active"
+// //   });
 
-//   console.log(`✅ Subscription synced for user: ${user.clerkId}`);
-// }
+// //   console.log(`✅ Payment processed for user: ${user.clerkId}`);
+// // }
 
-// async function handleSubscriptionCancellation(
-//   subscription: Stripe.Subscription
-// ) {
-//   console.log("🚫 Processing cancellation:", subscription.id);
+// // async function handlePaymentFailed(invoice: Stripe.Invoice) {
+// //   console.log("❌ Payment failed:", invoice.id);
 
-//   const customerId = subscription.customer as string;
+// //   if (!invoice.subscription) {
+// //     console.log("ℹ️ Invoice not related to subscription");
+// //     return;
+// //   }
 
-//   const user = await convex.query(api.users.getUserByStripeCustomerId, {
-//     stripeCustomerId: customerId
-//   });
+// //   const customerId = invoice.customer as string;
 
-//   if (!user) {
-//     console.error("❌ No user found for customer:", customerId);
-//     return;
-//   }
+// //   const user = await convex.query(api.users.getUserByStripeCustomerId, {
+// //     stripeCustomerId: customerId
+// //   });
 
-//   await convex.mutation(api.subscriptions.cancelUserSubscription, {
-//     clerkUserId: user.clerkId,
-//     stripeSubscriptionId: subscription.id,
-//     canceledAt: Math.floor(Date.now() / 1000)
-//   });
+// //   if (!user) {
+// //     console.error("❌ No user found for customer:", customerId);
+// //     return;
+// //   }
 
-//   console.log(`✅ Subscription canceled for user: ${user.clerkId}`);
-// }
+// //   const subscriptionId = invoice.subscription as string;
 
-// async function handlePaymentSucceeded(invoice: Stripe.Invoice) {
-//   console.log("💰 Payment succeeded:", invoice.id);
+// //   await convex.mutation(api.subscriptions.updateSubscriptionStatus, {
+// //     clerkUserId: user.clerkId,
+// //     stripeSubscriptionId: subscriptionId,
+// //     status: "past_due"
+// //   });
 
-//   if (!invoice.subscription) {
-//     console.log("ℹ️ Invoice not related to subscription");
-//     return;
-//   }
-
-//   const customerId = invoice.customer as string;
-
-//   const user = await convex.query(api.users.getUserByStripeCustomerId, {
-//     stripeCustomerId: customerId
-//   });
-
-//   if (!user) {
-//     console.error("❌ No user found for customer:", customerId);
-//     return;
-//   }
-
-//   // Update subscription status to active if it was past_due
-//   const subscriptionId = invoice.subscription as string;
-
-//   await convex.mutation(api.subscriptions.updateSubscriptionStatus, {
-//     clerkUserId: user.clerkId,
-//     stripeSubscriptionId: subscriptionId,
-//     status: "active"
-//   });
-
-//   console.log(`✅ Payment processed for user: ${user.clerkId}`);
-// }
-
-// async function handlePaymentFailed(invoice: Stripe.Invoice) {
-//   console.log("❌ Payment failed:", invoice.id);
-
-//   if (!invoice.subscription) {
-//     console.log("ℹ️ Invoice not related to subscription");
-//     return;
-//   }
-
-//   const customerId = invoice.customer as string;
-
-//   const user = await convex.query(api.users.getUserByStripeCustomerId, {
-//     stripeCustomerId: customerId
-//   });
-
-//   if (!user) {
-//     console.error("❌ No user found for customer:", customerId);
-//     return;
-//   }
-
-//   const subscriptionId = invoice.subscription as string;
-
-//   await convex.mutation(api.subscriptions.updateSubscriptionStatus, {
-//     clerkUserId: user.clerkId,
-//     stripeSubscriptionId: subscriptionId,
-//     status: "past_due"
-//   });
-
-//   console.log(`⚠️ Payment failed for user: ${user.clerkId}`);
-// }
+// //   console.log(`⚠️ Payment failed for user: ${user.clerkId}`);
+// // }
 
 // import { headers } from "next/headers";
 // import { NextResponse } from "next/server";
@@ -1083,92 +1083,79 @@ async function handleStripeEvent(event: Stripe.Event) {
   }
 }
 
-// ✅ Helper function to sync subscription via HTTP action
-async function syncSubscriptionToConvex(data: {
-  clerkUserId: string;
-  stripeSubscriptionId: string;
-  stripeCustomerId: string;
-  status: string;
-  priceId: string;
-  planType: "sandbox" | "clientProject" | "basic" | "pro";
-  currentPeriodStart: number;
-  currentPeriodEnd: number;
-  cancelAtPeriodEnd: boolean;
-  maxGpts: number;
-}) {
-  const response = await fetch(
-    `${process.env.NEXT_PUBLIC_CONVEX_URL}/stripe/sync-subscription`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data)
-    }
-  );
+// In app/api/webhooks/stripe/route.ts
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Convex sync failed: ${error}`);
-  }
-
-  return await response.json();
-}
-
-// ✅ Handle subscription creation/update
 async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
   console.log(`🔄 Processing subscription: ${subscription.id}`);
 
   try {
+    // Extract Stripe data
     const customerId = subscription.customer as string;
     const priceId = subscription.items.data[0]?.price.id;
 
     if (!priceId) throw new Error("No price found in subscription");
 
+    // Determine package from price ID
     const packageKey = getPricePackageMapping(priceId);
+
+    // Get clerkUserId from Stripe metadata
     let clerkUserId = subscription.metadata?.clerkUserId;
 
-    // Fallback 1: Look up by stripeCustomerId in Convex
+    // Fallback 1: If clerkUserId not in metadata, look up user by stripeCustomerId in Convex
     if (!clerkUserId) {
-      console.log(`⚠️  Looking up user by stripeCustomerId in Convex...`);
+      console.log(
+        `⚠️  clerkUserId not in subscription metadata, looking up by stripeCustomerId in Convex...`
+      );
       const users = await convex.query(api.users.getByStripeCustomerId, {
         stripeCustomerId: customerId
       });
+
       if (users && users.length > 0) {
         clerkUserId = users[0].clerkId;
-        console.log(`✅ Found clerkUserId from Convex: ${clerkUserId}`);
+        console.log(`✅ Found clerkUserId from Convex lookup: ${clerkUserId}`);
+      } else {
+        // Fallback 2: Check Stripe customer object metadata
+        console.log(
+          `⚠️  No user found in Convex, checking Stripe customer metadata...`
+        );
+        const customer = await stripe.customers.retrieve(customerId);
+
+        // Check if customer is deleted before accessing metadata
+        if ("deleted" in customer && customer.deleted) {
+          throw new Error(
+            `Customer ${customerId} has been deleted. Cannot retrieve clerkUserId.`
+          );
+        }
+
+        clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
+
+        if (!clerkUserId) {
+          throw new Error(
+            `Cannot find clerkUserId for subscription ${subscription.id}. ` +
+              `Not in subscription metadata, Convex DB, or Stripe customer metadata. ` +
+              `Customer ID: ${customerId}`
+          );
+        }
+        console.log(
+          `✅ Found clerkUserId from Stripe customer metadata: ${clerkUserId}`
+        );
       }
     }
 
-    // Fallback 2: Check Stripe customer metadata
-    if (!clerkUserId) {
-      console.log(`⚠️  Checking Stripe customer metadata...`);
-      const customer = await stripe.customers.retrieve(customerId);
-      if ("deleted" in customer && customer.deleted) {
-        throw new Error(`Customer ${customerId} has been deleted`);
-      }
-      clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
-      if (clerkUserId) {
-        console.log(`✅ Found clerkUserId from Stripe: ${clerkUserId}`);
-      }
-    }
-
-    if (!clerkUserId) {
-      throw new Error(
-        `Cannot find clerkUserId for subscription ${subscription.id}. ` +
-          `Customer ID: ${customerId}`
-      );
-    }
-
-    // ✅ Call Convex HTTP action
-    await syncSubscriptionToConvex({
+    // ✅ Call Convex mutation to update database
+    await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
       clerkUserId,
       stripeSubscriptionId: subscription.id,
       stripeCustomerId: customerId,
       status: subscription.status,
       priceId,
-      planType: packageKey,
-      currentPeriodStart:
-        subscription.items.data[0].current_period_start * 1000,
-      currentPeriodEnd: subscription.items.data[0].current_period_end * 1000,
+      planType: packageKey, // Pass plan type directly (not packageKey)
+      currentPeriodStart: subscription.items.data[0].current_period_start
+        ? subscription.items.data[0].current_period_start * 1000
+        : Date.now(),
+      currentPeriodEnd: subscription.items.data[0].current_period_end
+        ? subscription.items.data[0].current_period_end * 1000
+        : Date.now() + 30 * 24 * 60 * 60 * 1000,
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
       maxGpts: packageKey === "pro" ? 6 : 3
     });
@@ -1181,7 +1168,7 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
   }
 }
 
-// ✅ Handle subscription deletion
+// Handle subscription deletion
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   console.log(`🗑️ Handling subscription deletion: ${subscription.id}`);
 
@@ -1194,43 +1181,50 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
       const users = await convex.query(api.users.getByStripeCustomerId, {
         stripeCustomerId: customerId
       });
+
       if (users && users.length > 0) {
         clerkUserId = users[0].clerkId;
+      } else {
+        // Fallback 2: Check Stripe customer metadata
+        const customer = await stripe.customers.retrieve(customerId);
+
+        // Check if customer is deleted before accessing metadata
+        if ("deleted" in customer && customer.deleted) {
+          throw new Error(
+            `Cannot find clerkUserId for deleted subscription ${subscription.id}. Customer is deleted.`
+          );
+        }
+
+        clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
+
+        if (!clerkUserId) {
+          throw new Error(
+            `Cannot find clerkUserId for deleted subscription ${subscription.id}`
+          );
+        }
       }
     }
 
-    // Fallback 2: Check Stripe customer metadata
-    if (!clerkUserId) {
-      const customer = await stripe.customers.retrieve(customerId);
-      if ("deleted" in customer && customer.deleted) {
-        throw new Error(
-          `Cannot find clerkUserId for deleted subscription ${subscription.id}`
-        );
-      }
-      clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
-    }
-
-    if (!clerkUserId) {
-      throw new Error(
-        `Cannot find clerkUserId for deleted subscription ${subscription.id}`
-      );
-    }
-
-    // ✅ Call Convex HTTP action
-    await syncSubscriptionToConvex({
-      clerkUserId,
-      stripeSubscriptionId: subscription.id,
-      stripeCustomerId: customerId,
-      status: "canceled",
-      priceId: subscription.items.data[0]?.price.id || "",
-      planType: "sandbox",
-      currentPeriodStart:
-        (subscription.items.data[0]?.current_period_start || 0) * 1000,
-      currentPeriodEnd:
-        (subscription.items.data[0]?.current_period_end || 0) * 1000,
-      cancelAtPeriodEnd: false,
-      maxGpts: 0
+    const user = await convex.query(api.users.getUserByClerkId, {
+      clerkId: clerkUserId
     });
+
+    if (user) {
+      // Clear subscription from user record
+      await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
+        clerkUserId,
+        stripeSubscriptionId: subscription.id,
+        stripeCustomerId: customerId,
+        status: "canceled",
+        priceId: subscription.items.data[0]?.price.id || "",
+        planType: "sandbox",
+        currentPeriodStart:
+          subscription.items.data[0]?.current_period_start * 1000,
+        currentPeriodEnd: subscription.items.data[0]?.current_period_end * 1000,
+        cancelAtPeriodEnd: false,
+        maxGpts: 0
+      });
+    }
 
     console.log(`✅ Subscription ${subscription.id} marked as deleted`);
     return { success: true };
@@ -1240,7 +1234,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   }
 }
 
-// ✅ Handle invoice payment succeeded
+// Handle invoice payment succeeded
 async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
   console.log(`💰 Invoice payment succeeded: ${invoice.id}`);
 
@@ -1255,10 +1249,7 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
       return { success: true };
     }
 
-    // Get the subscription
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-
-    // Trigger subscription update to sync latest status
     return await handleSubscriptionUpdate(subscription);
   } catch (error) {
     console.error(`❌ Invoice payment processing failed:`, error);
@@ -1266,7 +1257,7 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
   }
 }
 
-// ✅ Handle invoice payment failed
+// Handle invoice payment failed
 async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   console.log(`❌ Invoice payment failed: ${invoice.id}`);
 
@@ -1279,51 +1270,51 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
       return { success: true };
     }
 
-    // Get subscription
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
     let clerkUserId = subscription.metadata?.clerkUserId;
 
-    // Fallback 1: Look up by stripeCustomerId in Convex
     if (!clerkUserId) {
       const users = await convex.query(api.users.getByStripeCustomerId, {
         stripeCustomerId: customerId
       });
+
       if (users && users.length > 0) {
         clerkUserId = users[0].clerkId;
-      }
-    }
+      } else {
+        const customer = await stripe.customers.retrieve(customerId);
 
-    // Fallback 2: Check Stripe customer metadata
-    if (!clerkUserId) {
-      const customer = await stripe.customers.retrieve(customerId);
-      if ("deleted" in customer && customer.deleted) {
-        throw new Error(
-          `Cannot find clerkUserId for failed invoice ${invoice.id}`
-        );
-      }
-      clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
-    }
+        if ("deleted" in customer && customer.deleted) {
+          throw new Error(
+            `Cannot find clerkUserId for failed invoice ${invoice.id}. Customer is deleted.`
+          );
+        }
 
-    if (!clerkUserId) {
-      throw new Error(
-        `Cannot find clerkUserId for failed invoice ${invoice.id}`
-      );
+        clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
+
+        if (!clerkUserId) {
+          throw new Error(
+            `Cannot find clerkUserId for failed invoice ${invoice.id}`
+          );
+        }
+      }
     }
 
     const priceId = subscription.items.data[0]?.price.id || "";
     const packageKey = getPricePackageMapping(priceId);
 
-    // ✅ Call Convex HTTP action
-    await syncSubscriptionToConvex({
+    await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
       clerkUserId,
       stripeSubscriptionId: subscription.id,
       stripeCustomerId: customerId,
       status: "past_due",
       priceId,
       planType: packageKey,
-      currentPeriodStart:
-        subscription.items.data[0].current_period_start * 1000,
-      currentPeriodEnd: subscription.items.data[0].current_period_end * 1000,
+      currentPeriodStart: subscription.items.data[0].current_period_start
+        ? subscription.items.data[0].current_period_start * 1000
+        : Date.now(),
+      currentPeriodEnd: subscription.items.data[0].current_period_end
+        ? subscription.items.data[0].current_period_end * 1000
+        : Date.now() + 30 * 24 * 60 * 60 * 1000,
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
       maxGpts: packageKey === "pro" ? 6 : 3
     });
@@ -1336,20 +1327,17 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   }
 }
 
-// Helper: Map Stripe price ID to package (valid schema values)
+// Helper: Map Stripe price ID to package
 function getPricePackageMapping(
   priceId: string
 ): "sandbox" | "clientProject" | "basic" | "pro" {
   const mapping: Record<string, "sandbox" | "clientProject" | "basic" | "pro"> =
     {
-      // Paid plans
       [process.env.STRIPE_PRICE_SANDBOX_LEVEL_MONTHLY || ""]: "sandbox",
       [process.env.STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY || ""]:
         "clientProject",
       [process.env.STRIPE_PRICE_BASIC_ID || ""]: "basic",
       [process.env.STRIPE_PRICE_PRO_ID || ""]: "pro",
-
-      // Free plans - map to "sandbox" plan type
       [process.env.STRIPE_PRICE_ANALYZING_TRENDS_FREE || ""]: "sandbox",
       [process.env.STRIPE_PRICE_SUMMER_SANDBOX_FREE || ""]: "sandbox",
       [process.env.STRIPE_PRICE_WORKSHOP_SANDBOX_FREE || ""]: "sandbox",
@@ -1360,11 +1348,7 @@ function getPricePackageMapping(
   const planType = mapping[priceId];
 
   if (!planType) {
-    throw new Error(
-      `Cannot map price ID "${priceId}" to a valid plan type. ` +
-        `Valid types are: "sandbox", "clientProject", "basic", "pro". ` +
-        `Please check that the price ID exists in your Stripe account and is configured in environment variables.`
-    );
+    throw new Error(`Cannot map price ID "${priceId}"`);
   }
 
   return planType;
