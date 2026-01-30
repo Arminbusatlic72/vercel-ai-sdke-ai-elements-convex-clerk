@@ -134,10 +134,15 @@ pre code {
   padding: 1em; /* Add some padding inside the code block */
 }
 
-/* If you're using a specific UI framework, you might target classes like: */
-/*
-.markdown-body pre {
-  overflow-x: auto;
-  max-width: 100%;
+.prose.whitespace-pre-wrap:has(table),
+.prose.whitespace-pre-wrap:has([data-streamdown="table-wrapper"]) {
+  white-space: normal !important;
 }
-*/
+.prose table {
+  max-width: 100%;
+  overflow-x: auto;
+  display: block;
+}
+.group-\[\.is-user\]\:ml-auto:is(:where(.group).is-user *) {
+  margin-left: 0 !important;
+}
