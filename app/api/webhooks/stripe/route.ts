@@ -226,33 +226,63 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 }
 
 // Handle invoice payment succeeded
+// async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
+//   console.log(`💰 Invoice payment succeeded: ${invoice.id}`);
+
+//   try {
+//     // const subscriptionId = invoice.lines.data[0]?.subscription as string | null;
+//     const subscriptionId =
+//       (invoice.lines.data.find((l) => l.subscription)?.subscription as
+//         | string
+//         | null) ?? null;
+
+//     if (!subscriptionId) {
+//       console.log("⏭️ No subscription for invoice, skipping...");
+//       return { success: true };
+//     }
+
+//     if (!subscriptionId) {
+//       console.log(`⏭️ No subscription for invoice, skipping...`);
+//       return { success: true };
+//     }
+
+//     // Get the subscription
+//     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
+//     // Trigger subscription update to sync latest status
+//     return await handleSubscriptionUpdate(subscription);
+//   } catch (error) {
+//     console.error(`❌ Invoice payment processing failed:`, error);
+//     return { success: false };
+//   }
+// }
+
 async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
   console.log(`💰 Invoice payment succeeded: ${invoice.id}`);
 
+  // ✅ Access 'subscription' safely even if TS is being difficult
+  // We check the top level first, then fall back to the line items
+  const subscriptionId =
+    ((invoice as any).subscription as string | null) ||
+    (invoice.lines.data.find((l) => l.subscription)?.subscription as
+      | string
+      | null);
+
+  if (!subscriptionId) {
+    console.log(
+      "⏭️ No subscription found for this invoice. This might be a one-time payment."
+    );
+    return { success: true };
+  }
+
   try {
-    // const subscriptionId = invoice.lines.data[0]?.subscription as string | null;
-    const subscriptionId =
-      (invoice.lines.data.find((l) => l.subscription)?.subscription as
-        | string
-        | null) ?? null;
-
-    if (!subscriptionId) {
-      console.log("⏭️ No subscription for invoice, skipping...");
-      return { success: true };
-    }
-
-    if (!subscriptionId) {
-      console.log(`⏭️ No subscription for invoice, skipping...`);
-      return { success: true };
-    }
-
-    // Get the subscription
+    // 2. Fetch the actual subscription object from Stripe
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
 
-    // Trigger subscription update to sync latest status
+    // 3. Sync to Convex
     return await handleSubscriptionUpdate(subscription);
   } catch (error) {
-    console.error(`❌ Invoice payment processing failed:`, error);
+    console.error(`❌ Error retrieving subscription ${subscriptionId}:`, error);
     return { success: false };
   }
 }
