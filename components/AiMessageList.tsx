@@ -1,7 +1,160 @@
+// "use client";
+
+// import { memo, useMemo } from "react";
+// import { CopyIcon, RefreshCcwIcon } from "lucide-react";
+// import {
+//   ConversationContent,
+//   ConversationScrollButton
+// } from "@/components/ai-elements/conversation";
+// import {
+//   Message,
+//   MessageContent,
+//   MessageResponse,
+//   MessageActions,
+//   MessageAction
+// } from "@/components/ai-elements/message";
+// import { Loader } from "@/components/ai-elements/loader";
+// import { processMessageContent, extractMessageText } from "@/lib/message";
+
+// interface AiMessageListProps {
+//   initialMessages?: Array<{
+//     _id: string | number;
+//     role: "user" | "assistant";
+//     content: string;
+//   }>;
+//   displayMessages: Array<any>;
+//   handleCopy: (text: string) => void;
+//   handleRetry: () => void;
+//   status: "idle" | "submitting" | "submitted" | "streaming" | "ready" | "error";
+// }
+
+// // Memoized individual message component
+// const MessageItem = memo(
+//   ({
+//     message,
+//     handleCopy,
+//     handleRetry
+//   }: {
+//     message: any;
+//     handleCopy: (text: string) => void;
+//     handleRetry: () => void;
+//   }) => {
+//     const fullText = useMemo(
+//       () => extractMessageText(message.parts),
+//       [message.parts]
+//     );
+//     const processedText = useMemo(
+//       () =>
+//         message.role === "user" ? processMessageContent(fullText) : fullText,
+//       [fullText, message.role]
+//     );
+
+//     if (!fullText) return null;
+
+//     return (
+//       <Message from={message.role}>
+//         <MessageContent className="py-6">
+//           <MessageResponse className="prose prose-sm max-w-none [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-gray-900 [&_pre]:p-4 [&_code]:text-sm [&_code]:font-mono [&_p]:leading-7 [&_p]:mb-4 overflow-x-auto whitespace-pre-wrap">
+//             {processedText}
+//           </MessageResponse>
+//         </MessageContent>
+
+//         {message.role === "assistant" && (
+//           <MessageActions className="mt-2">
+//             <MessageAction onClick={handleRetry} label="Retry">
+//               <RefreshCcwIcon className="size-4" />
+//             </MessageAction>
+//             <MessageAction onClick={() => handleCopy(fullText)} label="Copy">
+//               <CopyIcon className="size-4" />
+//             </MessageAction>
+//           </MessageActions>
+//         )}
+//       </Message>
+//     );
+//   }
+// );
+
+// MessageItem.displayName = "MessageItem";
+
+// // Memoized initial message component
+// const InitialMessageItem = memo(
+//   ({
+//     message
+//   }: {
+//     message: {
+//       _id: string | number;
+//       role: "user" | "assistant";
+//       content: string;
+//     };
+//   }) => {
+//     const processedContent = useMemo(
+//       () =>
+//         message.role === "user"
+//           ? processMessageContent(message.content)
+//           : message.content,
+//       [message.content, message.role]
+//     );
+
+//     return (
+//       <Message from={message.role}>
+//         <MessageContent className="py-6">
+//           <MessageResponse className="prose prose-sm max-w-none overflow-y-auto [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-gray-900 [&_pre]:p-4 [&_code]:text-sm [&_code]:font-mono [&_p]:leading-7 [&_p]:mb-4 overflow-x-auto">
+//             {processedContent}
+//           </MessageResponse>
+//         </MessageContent>
+//       </Message>
+//     );
+//   }
+// );
+
+// InitialMessageItem.displayName = "InitialMessageItem";
+
+// export const AiMessageList = memo(function AiMessageList({
+//   initialMessages = [],
+//   displayMessages,
+//   handleCopy,
+//   handleRetry,
+//   status
+// }: AiMessageListProps) {
+//   const showLoader = status === "submitted";
+
+//   return (
+//     <>
+//       <ConversationContent className="max-w-3xl mx-auto w-full px-4 sm:px-6">
+//         {initialMessages.map((m) => (
+//           <InitialMessageItem key={m._id} message={m} />
+//         ))}
+
+//         {displayMessages.map((message) => (
+//           <MessageItem
+//             key={message.id}
+//             message={message}
+//             handleCopy={handleCopy}
+//             handleRetry={handleRetry}
+//           />
+//         ))}
+
+//         {showLoader && (
+//           <div className="flex justify-center py-8 min-h-20">
+//             <Loader />
+//           </div>
+//         )}
+//       </ConversationContent>
+//       <ConversationScrollButton />
+//     </>
+//   );
+// });
+
 "use client";
 
 import { memo, useMemo } from "react";
-import { CopyIcon, RefreshCcwIcon } from "lucide-react";
+import {
+  CopyIcon,
+  RefreshCcwIcon,
+  SearchIcon,
+  Loader2Icon,
+  CheckIcon
+} from "lucide-react";
 import {
   ConversationContent,
   ConversationScrollButton
@@ -13,7 +166,6 @@ import {
   MessageActions,
   MessageAction
 } from "@/components/ai-elements/message";
-import { Loader } from "@/components/ai-elements/loader";
 import { processMessageContent, extractMessageText } from "@/lib/message";
 
 interface AiMessageListProps {
@@ -28,7 +180,7 @@ interface AiMessageListProps {
   status: "idle" | "submitting" | "submitted" | "streaming" | "ready" | "error";
 }
 
-// Memoized individual message component
+/* ----------------------------- Message Item ----------------------------- */
 const MessageItem = memo(
   ({
     message,
@@ -43,6 +195,7 @@ const MessageItem = memo(
       () => extractMessageText(message.parts),
       [message.parts]
     );
+
     const processedText = useMemo(
       () =>
         message.role === "user" ? processMessageContent(fullText) : fullText,
@@ -53,18 +206,37 @@ const MessageItem = memo(
 
     return (
       <Message from={message.role}>
-        <MessageContent className="py-6">
-          <MessageResponse className="prose prose-sm max-w-none [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-gray-900 [&_pre]:p-4 [&_code]:text-sm [&_code]:font-mono [&_p]:leading-7 [&_p]:mb-4 overflow-x-auto whitespace-pre-wrap">
+        <MessageContent className="py-4 sm:py-6">
+          <MessageResponse
+            className="prose prose-sm dark:prose-invert max-w-none 
+              [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-4 
+              [&_code]:text-sm [&_code]:font-mono [&_code]:before:content-none [&_code]:after:content-none
+              [&_p]:leading-7 [&_p]:mb-4 [&_p:last-child]:mb-0
+              [&_ul]:my-4 [&_ol]:my-4 [&_li]:my-1
+              [&_h1]:text-2xl [&_h2]:text-xl [&_h3]:text-lg
+              [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold
+              [&_h1]:mt-6 [&_h2]:mt-5 [&_h3]:mt-4
+              [&_h1]:mb-4 [&_h2]:mb-3 [&_h3]:mb-2
+              overflow-x-auto break-words"
+          >
             {processedText}
           </MessageResponse>
         </MessageContent>
-
         {message.role === "assistant" && (
-          <MessageActions className="mt-2">
-            <MessageAction onClick={handleRetry} label="Retry">
+          <MessageActions className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <MessageAction
+              onClick={handleRetry}
+              label="Retry"
+              className="hover:bg-muted/50"
+            >
               <RefreshCcwIcon className="size-4" />
             </MessageAction>
-            <MessageAction onClick={() => handleCopy(fullText)} label="Copy">
+
+            <MessageAction
+              onClick={() => handleCopy(fullText)}
+              label="Copy"
+              className="hover:bg-muted/50"
+            >
               <CopyIcon className="size-4" />
             </MessageAction>
           </MessageActions>
@@ -76,7 +248,7 @@ const MessageItem = memo(
 
 MessageItem.displayName = "MessageItem";
 
-// Memoized initial message component
+/* -------------------------- Initial Message Item ------------------------- */
 const InitialMessageItem = memo(
   ({
     message
@@ -97,8 +269,19 @@ const InitialMessageItem = memo(
 
     return (
       <Message from={message.role}>
-        <MessageContent className="py-6">
-          <MessageResponse className="prose prose-sm max-w-none overflow-y-auto [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-gray-900 [&_pre]:p-4 [&_code]:text-sm [&_code]:font-mono [&_p]:leading-7 [&_p]:mb-4 overflow-x-auto">
+        <MessageContent className="py-4 sm:py-6">
+          <MessageResponse
+            className="prose prose-sm dark:prose-invert max-w-none 
+              [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-4 
+              [&_code]:text-sm [&_code]:font-mono [&_code]:before:content-none [&_code]:after:content-none
+              [&_p]:leading-7 [&_p]:mb-4 [&_p:last-child]:mb-0
+              [&_ul]:my-4 [&_ol]:my-4 [&_li]:my-1
+              [&_h1]:text-2xl [&_h2]:text-xl [&_h3]:text-lg
+              [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold
+              [&_h1]:mt-6 [&_h2]:mt-5 [&_h3]:mt-4
+              [&_h1]:mb-4 [&_h2]:mb-3 [&_h3]:mb-2
+              overflow-x-auto break-words"
+          >
             {processedContent}
           </MessageResponse>
         </MessageContent>
@@ -109,6 +292,50 @@ const InitialMessageItem = memo(
 
 InitialMessageItem.displayName = "InitialMessageItem";
 
+/* ------------------------- Status Message Component ----------------------- */
+const StatusMessage = memo(({ status }: { status: string }) => {
+  const statusConfig = {
+    submitted: {
+      icon: <SearchIcon className="size-4 animate-pulse text-blue-500" />,
+      text: "Searching knowledge base",
+      subtext: "Analyzing relevant files...",
+      bgColor:
+        "bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800"
+    },
+    streaming: {
+      icon: <Loader2Icon className="size-4 animate-spin text-purple-500" />,
+      text: "Generating response",
+      subtext: "Composing answer...",
+      bgColor:
+        "bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800"
+    }
+  };
+
+  const config = statusConfig[status as keyof typeof statusConfig];
+  if (!config) return null;
+
+  return (
+    <Message from="assistant">
+      <MessageContent className="py-4 sm:py-6">
+        <div
+          className={`flex items-start gap-3 p-4 rounded-lg border ${config.bgColor} transition-colors`}
+        >
+          <div className="mt-0.5 shrink-0">{config.icon}</div>
+          <div className="flex-1 min-w-0 space-y-1">
+            <p className="text-sm font-medium text-foreground">{config.text}</p>
+            {config.subtext && (
+              <p className="text-xs text-muted-foreground">{config.subtext}</p>
+            )}
+          </div>
+        </div>
+      </MessageContent>
+    </Message>
+  );
+});
+
+StatusMessage.displayName = "StatusMessage";
+
+/* ------------------------------ Main List ------------------------------ */
 export const AiMessageList = memo(function AiMessageList({
   initialMessages = [],
   displayMessages,
@@ -116,15 +343,17 @@ export const AiMessageList = memo(function AiMessageList({
   handleRetry,
   status
 }: AiMessageListProps) {
-  const showLoader = status === "submitted";
+  const showStatusMessage = status === "submitted" || status === "streaming";
 
   return (
     <>
-      <ConversationContent className="max-w-3xl mx-auto w-full px-4 sm:px-6">
+      <ConversationContent className="max-w-3xl mx-auto w-full px-4 sm:px-6 pb-8">
+        {/* Initial messages */}
         {initialMessages.map((m) => (
           <InitialMessageItem key={m._id} message={m} />
         ))}
 
+        {/* Real messages */}
         {displayMessages.map((message) => (
           <MessageItem
             key={message.id}
@@ -134,12 +363,10 @@ export const AiMessageList = memo(function AiMessageList({
           />
         ))}
 
-        {showLoader && (
-          <div className="flex justify-center py-8 min-h-20">
-            <Loader />
-          </div>
-        )}
+        {/* Status indicator */}
+        {showStatusMessage && <StatusMessage status={status} />}
       </ConversationContent>
+
       <ConversationScrollButton />
     </>
   );
