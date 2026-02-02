@@ -55,7 +55,7 @@ export function GptSelector() {
       </div>
     );
   }
-
+  console.log(subscriptionGpts);
   return (
     <div className="space-y-3">
       <label className="block text-sm font-medium">Select a GPT</label>
