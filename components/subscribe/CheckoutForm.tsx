@@ -87,7 +87,7 @@ export default function CheckoutForm() {
       if (stripeError)
         throw new Error(stripeError.message || "Card validation failed");
 
-      const response = await fetch("/api/create-subscription", {
+      const response = await fetch("/api/stripe/create-subscription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -132,7 +132,7 @@ export default function CheckoutForm() {
 
     try {
       // For free packages with $0 price, create subscription without payment
-      const response = await fetch("/api/create-subscription", {
+      const response = await fetch("/api/stripe/create-subscription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

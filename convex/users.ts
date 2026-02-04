@@ -63,7 +63,8 @@ export const getUserSubscription = query({
       aiCreditsResetAt: user.aiCreditsResetAt,
       canCreateProject: isActive,
       plan: subscription?.plan ?? "none",
-      planLabel: packageName
+      planLabel: packageName,
+      stripeCustomerId: user.stripeCustomerId
     };
   }
 });

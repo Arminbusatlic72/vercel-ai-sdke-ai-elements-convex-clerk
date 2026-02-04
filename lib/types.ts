@@ -117,6 +117,7 @@ export interface UserSubscription {
   gptIds: string[];
   cancelAtPeriodEnd?: boolean;
   currentPeriodEnd?: number;
+  stripeSubscriptionId?: string;
 }
 
 /**
@@ -131,7 +132,11 @@ export interface SubscriptionData {
 
   aiCredits: number;
   aiCreditsResetAt?: number;
-  canCreateProject: boolean;
+  canCreateProject?: boolean; // Make optional to match Convex return type
+
+  maxGPTs?: number; // Add these fields that Convex is returning
+  currentGPTCount?: number;
 
   subscription: UserSubscription | null;
+  stripeCustomerId?: string;
 }

@@ -2,6 +2,7 @@
 
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { useUser } from "@clerk/nextjs";
 
 import { useSyncUser } from "@/lib/hooks/useSyncUser";
 import { useAccessControl } from "@/lib/hooks/useAccessControl";
@@ -12,16 +13,25 @@ import SubscriptionWarnings from "./SubscriptionWarnings";
 import GPTGrid from "./GPTGrid";
 import QuickActions from "./QuickActions";
 import UsageSummary from "./UsageSummary";
+import ManageSubscription from "./ManageSubscription";
 import { SubscriptionData } from "@/lib/types";
+
 interface DashboardShellProps {
   data: SubscriptionData;
 }
+
 export default function DashboardShell({ data }: DashboardShellProps) {
-  useSyncUser();
+  const { isLoaded: isUserLoaded } = useUser();
+  const { isSynced } = useSyncUser();
 
   const subscriptionData = useQuery(api.users.getUserSubscription);
 
-  useAccessControl(subscriptionData);
+  useAccessControl({
+    subscriptionData,
+    isUserLoaded,
+    isSynced,
+    redirectTo: "/subscribe"
+  });
 
   if (subscriptionData === undefined)
     return <Loader text="Loading your dashboard..." />;
@@ -37,25 +47,8 @@ export default function DashboardShell({ data }: DashboardShellProps) {
         <GPTGrid />
         <QuickActions />
         <UsageSummary data={subscriptionData} />
+        <ManageSubscription data={subscriptionData} />
       </div>
     </div>
   );
 }
-
-// // DashboardShell.tsx
-// import React from "react";
-// import WelcomeHeader from "./WelcomeHeader";
-
-// interface DashboardShellProps {
-//   data: any; // Replace `any` with your SubscriptionData type if available
-// }
-
-// export default function DashboardShell({ data }: DashboardShellProps) {
-//   return (
-//     <div className="min-h-screen p-6">
-//       <WelcomeHeader data={data} />
-
-//       {/* Rest of your dashboard content */}
-//     </div>
-//   );
-// }

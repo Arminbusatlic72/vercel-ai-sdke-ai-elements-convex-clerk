@@ -3,7 +3,7 @@ import { useRouter } from "next/navigation";
 import { SubscriptionData } from "@/lib/types";
 
 interface UseAccessControlOptions {
-  subscriptionData: SubscriptionData | undefined;
+  subscriptionData: SubscriptionData | null | undefined;
   isUserLoaded: boolean;
   isSynced: boolean;
   redirectTo?: string;
@@ -19,26 +19,38 @@ export function useAccessControl({
   const hasCheckedAccessRef = useRef(false);
 
   useEffect(() => {
-    // Only check access once to prevent redirect loops
+    // Reset the check flag when dependencies change
+    // This allows re-checking when subscription data updates
+    hasCheckedAccessRef.current = false;
+  }, [subscriptionData]);
+
+  useEffect(() => {
+    // Only check access once per data state to prevent redirect loops
     if (hasCheckedAccessRef.current) return;
 
-    // Don't check while still loading or syncing
-    if (!isUserLoaded || !isSynced || subscriptionData === undefined) {
+    // Don't check while still loading, syncing, or if data is not available
+    if (
+      !isUserLoaded ||
+      !isSynced ||
+      subscriptionData === undefined ||
+      subscriptionData === null
+    ) {
       return;
     }
 
     // Mark that we've checked
     hasCheckedAccessRef.current = true;
 
-    const isAdmin = subscriptionData?.role === "admin";
-    const hasSubscription = !!subscriptionData?.subscription;
-    const subscriptionStatus = subscriptionData?.subscription?.status;
+    const isAdmin = subscriptionData.role === "admin";
+    const hasSubscription = !!subscriptionData.subscription;
+    const subscriptionStatus = subscriptionData.subscription?.status;
 
     console.log("🎯 Access Check:", {
       isAdmin,
       hasSubscription,
       subscriptionStatus,
-      canCreateProject: subscriptionData?.canCreateProject
+      canCreateProject: subscriptionData.canCreateProject,
+      role: subscriptionData.role
     });
 
     // Allow access if:
@@ -61,6 +73,8 @@ export function useAccessControl({
   }, [subscriptionData, isUserLoaded, isSynced, router, redirectTo]);
 
   return {
-    isChecking: !hasCheckedAccessRef.current && subscriptionData === undefined
+    isChecking:
+      !hasCheckedAccessRef.current &&
+      (subscriptionData === undefined || subscriptionData === null)
   };
 }
