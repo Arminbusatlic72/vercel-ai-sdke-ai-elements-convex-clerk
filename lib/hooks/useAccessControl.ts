@@ -1,20 +1,66 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { SubscriptionData } from "@/lib/types";
 
-export function useAccessControl(subscriptionData: any) {
+interface UseAccessControlOptions {
+  subscriptionData: SubscriptionData | undefined;
+  isUserLoaded: boolean;
+  isSynced: boolean;
+  redirectTo?: string;
+}
+
+export function useAccessControl({
+  subscriptionData,
+  isUserLoaded,
+  isSynced,
+  redirectTo = "/subscribe"
+}: UseAccessControlOptions) {
   const router = useRouter();
-  const checkedRef = useRef(false);
+  const hasCheckedAccessRef = useRef(false);
 
   useEffect(() => {
-    if (!subscriptionData || checkedRef.current) return;
+    // Only check access once to prevent redirect loops
+    if (hasCheckedAccessRef.current) return;
 
-    checkedRef.current = true;
-
-    const isAdmin = subscriptionData.role === "admin";
-    const hasSub = !!subscriptionData.subscription;
-
-    if (!hasSub && !isAdmin) {
-      router.push("/subscribe");
+    // Don't check while still loading or syncing
+    if (!isUserLoaded || !isSynced || subscriptionData === undefined) {
+      return;
     }
-  }, [subscriptionData, router]);
+
+    // Mark that we've checked
+    hasCheckedAccessRef.current = true;
+
+    const isAdmin = subscriptionData?.role === "admin";
+    const hasSubscription = !!subscriptionData?.subscription;
+    const subscriptionStatus = subscriptionData?.subscription?.status;
+
+    console.log("🎯 Access Check:", {
+      isAdmin,
+      hasSubscription,
+      subscriptionStatus,
+      canCreateProject: subscriptionData?.canCreateProject
+    });
+
+    // Allow access if:
+    // 1. User is admin, OR
+    // 2. User has an active subscription (active, trialing, past_due)
+    const hasActiveSubscription =
+      hasSubscription &&
+      (subscriptionStatus === "active" ||
+        subscriptionStatus === "trialing" ||
+        subscriptionStatus === "past_due");
+
+    const hasAccess = hasActiveSubscription || isAdmin;
+
+    if (!hasAccess) {
+      console.log(`🚨 Redirecting to ${redirectTo} - No active subscription`);
+      router.replace(redirectTo);
+    } else {
+      console.log("✅ Access granted - User can view dashboard");
+    }
+  }, [subscriptionData, isUserLoaded, isSynced, router, redirectTo]);
+
+  return {
+    isChecking: !hasCheckedAccessRef.current && subscriptionData === undefined
+  };
 }

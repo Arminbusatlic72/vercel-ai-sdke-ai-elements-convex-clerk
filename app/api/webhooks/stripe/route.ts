@@ -267,38 +267,6 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   }
 }
 
-// Handle invoice payment succeeded
-// async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
-//   console.log(`💰 Invoice payment succeeded: ${invoice.id}`);
-
-//   try {
-//     // const subscriptionId = invoice.lines.data[0]?.subscription as string | null;
-//     const subscriptionId =
-//       (invoice.lines.data.find((l) => l.subscription)?.subscription as
-//         | string
-//         | null) ?? null;
-
-//     if (!subscriptionId) {
-//       console.log("⏭️ No subscription for invoice, skipping...");
-//       return { success: true };
-//     }
-
-//     if (!subscriptionId) {
-//       console.log(`⏭️ No subscription for invoice, skipping...`);
-//       return { success: true };
-//     }
-
-//     // Get the subscription
-//     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-
-//     // Trigger subscription update to sync latest status
-//     return await handleSubscriptionUpdate(subscription);
-//   } catch (error) {
-//     console.error(`❌ Invoice payment processing failed:`, error);
-//     return { success: false };
-//   }
-// }
-
 async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
   console.log(`💰 Invoice payment succeeded: ${invoice.id}`);
 

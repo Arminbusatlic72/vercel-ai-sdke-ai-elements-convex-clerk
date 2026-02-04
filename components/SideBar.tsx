@@ -1,7 +1,7 @@
 "use client";
 
 import React, {
-  useContext,
+  use,
   useMemo,
   useCallback,
   useState,
@@ -38,7 +38,7 @@ export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useUser();
-  const { closeMobileNav, isMobileNavOpen } = useContext(NavigationContext);
+  const { closeMobileNav, isMobileNavOpen } = use(NavigationContext);
   const [isPending, startTransition] = useTransition();
 
   const {

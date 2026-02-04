@@ -33,7 +33,7 @@ export default function Header() {
         </div>
 
         {/* CENTER */}
-        <nav className="hidden md:flex items-center">
+        <nav className="flex items-center">
           <ModelSelectorDropdown />
         </nav>
 

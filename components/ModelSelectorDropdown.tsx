@@ -125,8 +125,6 @@ export default function ModelSelectorDropdown() {
     icon: getGPTIcon(gpt.gptId)
   }));
 
-  console.log("Dynamic Links:", dynamicLinks);
-
   const staticLLMs = isAdmin
     ? [
         {

@@ -89,3 +89,49 @@ export interface GPTConfig {
     uploadedAt: number;
   }[];
 }
+
+/* ================================
+   Subscription / Billing Types
+================================ */
+
+export type SubscriptionStatus =
+  | "active"
+  | "canceled"
+  | "past_due"
+  | "trialing"
+  | "incomplete"
+  | "incomplete_expired"
+  | "unpaid"
+  | "paused";
+
+export type UserRole = "admin" | "user";
+
+/**
+ * Subscription object stored on the user
+ * mirrors what Convex returns
+ */
+export interface UserSubscription {
+  status: SubscriptionStatus;
+  plan: string; // matches your package key ("sandbox", "substack", etc)
+  maxGpts: number;
+  gptIds: string[];
+  cancelAtPeriodEnd?: boolean;
+  currentPeriodEnd?: number;
+}
+
+/**
+ * This EXACTLY matches api.users.getUserSubscription
+ * (your dashboard query response)
+ */
+export interface SubscriptionData {
+  role: UserRole;
+
+  plan: string;
+  planLabel: string;
+
+  aiCredits: number;
+  aiCreditsResetAt?: number;
+  canCreateProject: boolean;
+
+  subscription: UserSubscription | null;
+}

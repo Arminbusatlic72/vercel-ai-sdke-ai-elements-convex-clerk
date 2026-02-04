@@ -4,11 +4,9 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
 export default function GPTGrid() {
-  // ✅ use the correct query
   const gpts = useQuery(api.packages.getSubscriptionGpts);
 
-  if (gpts === undefined) return null;
-  if (!gpts.length) return null;
+  if (!gpts?.length) return null;
 
   return (
     <div className="space-y-4">
