@@ -25,7 +25,7 @@ async function verifyStripeSignature(
   }
 }
 
-// ✅ STEP 2: Route Handler
+// ✅ STEP 2: Route Handler with Idempotency
 export async function POST(request: Request) {
   const body = await request.text();
   const headersList = await headers();
@@ -33,10 +33,36 @@ export async function POST(request: Request) {
 
   try {
     const event = await verifyStripeSignature(body, signature);
-    console.log(`✅ Verified Stripe event: ${event.type}`);
+    console.log(`✅ Verified Stripe event: ${event.type} (${event.id})`);
+
+    // 🔴 IDEMPOTENCY CHECK: Skip if already processed
+    try {
+      const existing = await convex.query(api.webhooks.getWebhookEvent, {
+        stripeEventId: event.id
+      });
+      
+      if (existing && existing.status === "success") {
+        console.log(`⚠️ Event ${event.id} already processed, skipping...`);
+        return NextResponse.json({ received: true });
+      }
+    } catch (e) {
+      // Query may not exist yet, continue processing
+    }
 
     // Route to appropriate handler
     const result = await handleStripeEvent(event);
+    
+    // 🔴 RECORD WEBHOOK PROCESSING
+    try {
+      await convex.mutation(api.webhooks.recordWebhookEvent, {
+        stripeEventId: event.id,
+        eventType: event.type,
+        status: result.success ? "success" : "failed"
+      });
+    } catch (e) {
+      console.warn("Failed to record webhook event:", e);
+    }
+    
     return NextResponse.json({ received: result.success });
   } catch (error: any) {
     console.error(`❌ Webhook error: ${error.message}`);
@@ -47,6 +73,12 @@ export async function POST(request: Request) {
 // ✅ STEP 3: Event Router
 async function handleStripeEvent(event: Stripe.Event) {
   switch (event.type) {
+    // ✅ New: Checkout completion (new subscription)
+    case "checkout.session.completed":
+      return await handleCheckoutSessionCompleted(
+        event.data.object as Stripe.Checkout.Session
+      );
+
     case "customer.subscription.created":
     case "customer.subscription.updated":
       return await handleSubscriptionUpdate(
@@ -56,6 +88,11 @@ async function handleStripeEvent(event: Stripe.Event) {
     case "customer.subscription.deleted":
       return await handleSubscriptionDeleted(
         event.data.object as Stripe.Subscription
+      );
+
+    case "invoice.payment_succeeded":
+      return await handleInvoicePaymentSucceeded(
+        event.data.object as Stripe.Invoice
       );
 
     case "invoice.payment_succeeded":
@@ -127,7 +164,7 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
   // 🔴 CRITICAL: Only sync subscription state. DO NOT downgrade user on cancel_at_period_end.
   // User keeps FULL access until billing period actually ends.
   // Only downgrade when webhook is customer.subscription.deleted (true cancellation).
-  
+
   if (subscription.cancel_at_period_end) {
     console.log(
       `⚠️ Subscription ${subscription.id} scheduled for cancellation at period end`
@@ -143,6 +180,22 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
     );
   }
 
+  // ✅ NEW: Track trial period end if subscription is trialing
+  let trialEndDate: number | undefined;
+  if (subscription.status === "trialing" && subscription.trial_end) {
+    trialEndDate = subscription.trial_end * 1000; // Convert to milliseconds
+    console.log(`📅 Trial period ends: ${new Date(trialEndDate).toISOString()}`);
+  }
+
+  // 🔴 Map correct maxGpts per plan type
+  const maxGptsPerPlan: Record<string, number> = {
+    sandbox: 12,
+    clientProject: 1,
+    basic: 3,
+    pro: 6
+  };
+  const maxGpts = maxGptsPerPlan[packageKey] || 1;
+
   await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
     clerkUserId,
     stripeSubscriptionId: subscription.id,
@@ -153,7 +206,11 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
     currentPeriodStart: subscription.items.data[0].current_period_start * 1000,
     currentPeriodEnd: subscription.items.data[0].current_period_end * 1000,
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
-    maxGpts: packageKey === "sandbox" ? 12 : 1
+    maxGpts,
+    // ✅ NEW: Pass trial and payment tracking fields
+    trialEndDate,
+    paymentFailureGracePeriodEnd: undefined, // Only set by payment_failed handler
+    lastPaymentFailedAt: undefined // Only set by payment_failed handler
   });
 
   console.log(
@@ -220,7 +277,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
       // 🔴 CRITICAL: Subscription truly deleted—downgrade user to free plan NOW
       const priceId = subscription.items.data[0]?.price.id;
       let downgradePackageKey = "sandbox"; // Default to free
-      
+
       // Attempt to map original price for audit trail
       if (priceId) {
         try {
@@ -229,11 +286,11 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
           downgradePackageKey = "sandbox"; // Safe fallback
         }
       }
-      
+
       console.log(
         `🔴 Subscription ${subscription.id} deleted—downgrading user ${clerkUserId} to free plan`
       );
-      
+
       await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
         clerkUserId,
         stripeSubscriptionId: subscription.id,
@@ -243,9 +300,15 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
         planType: downgradePackageKey,
         currentPeriodStart:
           subscription.items.data[0]?.current_period_start * 1000 || Date.now(),
-        currentPeriodEnd: subscription.items.data[0]?.current_period_end * 1000 || Date.now(),
+        currentPeriodEnd:
+          subscription.items.data[0]?.current_period_end * 1000 || Date.now(),
         cancelAtPeriodEnd: false,
-        maxGpts: 0 // No GPTs after cancellation
+        maxGpts: 0, // No GPTs after cancellation
+        // ✅ NEW: Clear trial and grace period tracking on true cancellation
+        trialEndDate: undefined,
+        lastPaymentFailedAt: undefined,
+        paymentFailureGracePeriodEnd: undefined,
+        canceledAt: Date.now()
       });
     } else {
       console.warn(`User ${clerkUserId} not found after deletion attempt`);
@@ -359,12 +422,22 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
 
     // 🔴 Map correct maxGpts per plan type (not hardcoded pro/other)
     const maxGptsPerPlan: Record<string, number> = {
-      "sandbox": 12,
-      "clientProject": 1,
-      "basic": 3,
-      "pro": 6
+      sandbox: 12,
+      clientProject: 1,
+      basic: 3,
+      pro: 6
     };
     const maxGpts = maxGptsPerPlan[packageKey] || 1;
+
+    // ✅ NEW: Implement 7-day grace period
+    // User enters past_due state but retains full access for 7 days to recover payment
+    const gracePeriodDays = 7;
+    const gracePeriodEnd =
+      Date.now() + gracePeriodDays * 24 * 60 * 60 * 1000;
+
+    console.log(
+      `⏳ Setting 7-day grace period for past_due. Access retained until: ${new Date(gracePeriodEnd).toISOString()}`
+    );
 
     await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
       clerkUserId,
@@ -380,13 +453,60 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
         ? subscription.items.data[0].current_period_end * 1000
         : Date.now() + 30 * 24 * 60 * 60 * 1000,
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      maxGpts
+      maxGpts,
+      // ✅ NEW: Pass grace period tracking fields
+      trialEndDate: undefined, // Not a trial period
+      lastPaymentFailedAt: Date.now(),
+      paymentFailureGracePeriodEnd: gracePeriodEnd
     });
 
     console.log(`✅ Subscription status updated to past_due`);
     return { success: true };
   } catch (error) {
     console.error(`❌ Payment failure handling failed:`, error);
+    return { success: false };
+  }
+}
+
+// ✅ NEW HANDLER: checkout.session.completed (new subscription from checkout)
+async function handleCheckoutSessionCompleted(
+  session: Stripe.Checkout.Session
+) {
+  console.log(`✅ Checkout completed: ${session.id}`);
+
+  try {
+    // Checkout session contains subscription ID if it was a subscription checkout
+    const subscriptionId = session.subscription as string | null;
+    if (!subscriptionId) {
+      console.log(`ℹ️ Checkout ${session.id} is not a subscription, skipping...`);
+      return { success: true };
+    }
+
+    const clerkUserId = session.metadata?.clerkUserId;
+    if (!clerkUserId) {
+      console.error(`❌ Checkout ${session.id} missing clerkUserId metadata`);
+      return { success: false };
+    }
+
+    // ✅ Auto-create user if missing
+    try {
+      await convex.mutation(api.users.getOrCreateUserFromWebhook, {
+        clerkId: clerkUserId,
+        email: session.customer_email || undefined,
+        name: undefined
+      });
+    } catch (error) {
+      console.error(`❌ Failed to ensure user exists: ${error}`);
+      return { success: false };
+    }
+
+    // Fetch the actual subscription from Stripe
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    
+    // Process as a subscription update (same logic)
+    return await handleSubscriptionUpdate(subscription);
+  } catch (error) {
+    console.error(`❌ Checkout completion failed:`, error);
     return { success: false };
   }
 }

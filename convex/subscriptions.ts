@@ -26,7 +26,12 @@ export const syncSubscriptionFromStripe = mutation({
     currentPeriodStart: v.number(),
     currentPeriodEnd: v.number(),
     cancelAtPeriodEnd: v.boolean(),
-    maxGpts: v.number()
+    maxGpts: v.number(),
+    // ✅ NEW: Optional fields for enhanced tracking
+    trialEndDate: v.optional(v.number()),
+    paymentFailureGracePeriodEnd: v.optional(v.number()),
+    lastPaymentFailedAt: v.optional(v.number()),
+    canceledAt: v.optional(v.number())
   },
   handler: async (ctx, args) => {
     // 1️⃣ Find user by Clerk ID
@@ -65,7 +70,7 @@ export const syncSubscriptionFromStripe = mutation({
     // 2️⃣ Update user's subscription nested field
     // CRITICAL: Preserve existing gptIds during sync (only reset on true cancellation)
     const existingGptIds = user.subscription?.gptIds || [];
-    
+
     await ctx.db.patch(user._id, {
       stripeCustomerId: args.stripeCustomerId,
       subscription: {
@@ -73,8 +78,16 @@ export const syncSubscriptionFromStripe = mutation({
         stripeSubscriptionId: args.stripeSubscriptionId,
         plan: args.planType,
         priceId: args.priceId,
+        currentPeriodStart: args.currentPeriodStart,
         currentPeriodEnd: args.currentPeriodEnd,
         cancelAtPeriodEnd: args.cancelAtPeriodEnd,
+        trialEndDate: args.trialEndDate,
+        paymentFailureGracePeriodEnd: args.paymentFailureGracePeriodEnd,
+        lastPaymentFailedAt: args.lastPaymentFailedAt,
+        canceledAt:
+          args.status === "canceled"
+            ? args.canceledAt || Date.now()
+            : undefined,
         maxGpts: args.maxGpts,
         // Only reset gptIds if subscription truly canceled (not on schedule-for-cancellation)
         gptIds: args.status === "canceled" ? [] : existingGptIds
@@ -268,5 +281,95 @@ export const hasActiveSubscription = query({
 
     const activeStatuses = ["active", "trialing", "past_due"];
     return activeStatuses.includes(user.subscription.status);
+  }
+});
+
+// ✅ NEW QUERY: Get subscription health/status
+export const getSubscriptionHealth = query({
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return {
+        isActive: false,
+        status: "no-subscription" as const,
+        daysUntilExpiration: null,
+        isInGracePeriod: false,
+        isTrialing: false,
+        messageKey: "no_subscription"
+      };
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user || !user.subscription) {
+      return {
+        isActive: false,
+        status: "no-subscription" as const,
+        daysUntilExpiration: null,
+        isInGracePeriod: false,
+        isTrialing: false,
+        messageKey: "no_subscription"
+      };
+    }
+
+    const sub = user.subscription;
+    const now = Date.now();
+
+    // ✅ Check if in grace period (past_due with grace period end in future)
+    const isInGracePeriod =
+      sub.status === "past_due" &&
+      sub.paymentFailureGracePeriodEnd &&
+      sub.paymentFailureGracePeriodEnd > now;
+
+    // ✅ Check if actively subscription (allowing grace period access)
+    const isActive =
+      sub.status === "active" || sub.status === "trialing" || isInGracePeriod;
+
+    // ✅ Calculate days until expiration (period end or grace period end)
+    const expirationTime = isInGracePeriod
+      ? sub.paymentFailureGracePeriodEnd
+      : sub.status === "canceled"
+        ? now // Already expired
+        : sub.currentPeriodEnd || now;
+
+    const daysUntilExpiration = Math.ceil(
+      (expirationTime - now) / (1000 * 60 * 60 * 24)
+    );
+
+    // ✅ Determine status message key for frontend
+    let statusKey: string;
+    if (sub.status === "canceled") {
+      statusKey = "canceled";
+    } else if (sub.status === "trialing") {
+      statusKey = "trialing";
+    } else if (isInGracePeriod) {
+      statusKey = "grace_period";
+    } else if (sub.status === "past_due") {
+      statusKey = "past_due";
+    } else if (sub.cancelAtPeriodEnd) {
+      statusKey = "expires_soon";
+    } else if (sub.status === "active") {
+      statusKey = "active";
+    } else {
+      statusKey = sub.status; // incomplete, unpaid, paused, etc.
+    }
+
+    return {
+      isActive,
+      status: statusKey,
+      daysUntilExpiration: isActive ? daysUntilExpiration : null,
+      isInGracePeriod,
+      isTrialing: sub.status === "trialing",
+      messageKey: statusKey,
+      plan: sub.plan,
+      currentPeriodEnd: sub.currentPeriodEnd,
+      trialEndDate: sub.trialEndDate,
+      gracePeriodEndDate: sub.paymentFailureGracePeriodEnd,
+      cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+      lastPaymentFailedAt: sub.lastPaymentFailedAt
+    };
   }
 });

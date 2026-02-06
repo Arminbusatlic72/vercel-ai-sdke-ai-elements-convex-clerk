@@ -25,7 +25,6 @@ export default defineSchema({
           v.literal("paused")
         ),
         stripeSubscriptionId: v.string(),
-        // UPDATE THIS LINE - Add your new plan types
         plan: v.union(
           v.literal("sandbox"),
           v.literal("clientProject"),
@@ -34,8 +33,13 @@ export default defineSchema({
         ),
         priceId: v.string(),
         productName: v.optional(v.string()),
+        currentPeriodStart: v.optional(v.number()), // Track start for trial detection
         currentPeriodEnd: v.optional(v.number()),
         cancelAtPeriodEnd: v.optional(v.boolean()),
+        canceledAt: v.optional(v.number()), // When actually canceled
+        trialEndDate: v.optional(v.number()), // Trial period end
+        paymentFailureGracePeriodEnd: v.optional(v.number()), // Grace period after payment fail
+        lastPaymentFailedAt: v.optional(v.number()), // Last payment failure timestamp
         maxGpts: v.number(),
         gptIds: v.array(v.string())
       })
@@ -52,6 +56,18 @@ export default defineSchema({
     .index("by_role", ["role"])
     .index("by_stripeCustomerId", ["stripeCustomerId"])
     .index("by_subscription_status", ["subscription.status"]), // ✅ New index
+
+  // ✅ Webhook event idempotency tracking (prevent duplicate processing)
+  webhookEvents: defineTable({
+    stripeEventId: v.string(), // Stripe's unique event ID
+    eventType: v.string(),
+    processedAt: v.number(),
+    status: v.union(
+      v.literal("success"),
+      v.literal("failed"),
+      v.literal("pending")
+    )
+  }).index("by_event_id", ["stripeEventId"]),
 
   // ✅ ADD SUBSCRIPTIONS TABLE for history/audit
   subscriptions: defineTable({
