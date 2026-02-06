@@ -291,12 +291,15 @@ export const createSubscription = action({
 
     if (!existingUser) {
       // Auto-create a minimal user when missing to avoid webhook race conditions.
-      existingUser = await ctx.runMutation(api.users.getOrCreateUserFromWebhook, {
-        clerkId: args.clerkUserId,
-        email: args.email,
-        name: undefined,
-        imageUrl: undefined
-      });
+      existingUser = await ctx.runMutation(
+        api.users.getOrCreateUserFromWebhook,
+        {
+          clerkId: args.clerkUserId,
+          email: args.email,
+          name: undefined,
+          imageUrl: undefined
+        }
+      );
     }
     // 1. Find or Create Customer
     let customerId: string;

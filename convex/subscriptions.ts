@@ -63,23 +63,27 @@ export const syncSubscriptionFromStripe = mutation({
     if (!user) throw new Error(`Failed to create user: ${args.clerkUserId}`);
 
     // 2️⃣ Update user's subscription nested field
-    // Note: planType is already the correct plan type from webhook
+    // CRITICAL: Preserve existing gptIds during sync (only reset on true cancellation)
+    const existingGptIds = user.subscription?.gptIds || [];
+    
     await ctx.db.patch(user._id, {
       stripeCustomerId: args.stripeCustomerId,
       subscription: {
         status: args.status,
         stripeSubscriptionId: args.stripeSubscriptionId,
-        plan: args.planType, // Use the plan type directly
+        plan: args.planType,
         priceId: args.priceId,
         currentPeriodEnd: args.currentPeriodEnd,
         cancelAtPeriodEnd: args.cancelAtPeriodEnd,
         maxGpts: args.maxGpts,
-        gptIds: [] // Initialize empty, will be populated when user assigns GPTs
+        // Only reset gptIds if subscription truly canceled (not on schedule-for-cancellation)
+        gptIds: args.status === "canceled" ? [] : existingGptIds
       },
       updatedAt: Date.now()
     });
 
-    // 3️⃣ Also update or create in subscriptions table
+    // 3️⃣ Also update or create in subscriptions table (audit/history)
+    // IDEMPOTENCY: Prevent duplicates by finding the latest record for this subscription
     const existing = await ctx.db
       .query("subscriptions")
       .withIndex("by_clerk_user_id", (q) =>
@@ -88,7 +92,8 @@ export const syncSubscriptionFromStripe = mutation({
       .filter((q) =>
         q.eq(q.field("stripeSubscriptionId"), args.stripeSubscriptionId)
       )
-      .unique();
+      .order("desc")
+      .first(); // Latest record only
 
     if (existing) {
       await ctx.db.patch(existing._id, {

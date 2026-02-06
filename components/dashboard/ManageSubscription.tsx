@@ -193,7 +193,8 @@ export default function ManageSubscription({ data }: ManageSubscriptionProps) {
 
   const formatDate = (timestamp?: number) => {
     if (!timestamp) return "N/A";
-    return new Date(timestamp * 1000).toLocaleDateString("en-US", {
+    // timestamp is already in milliseconds from Convex (don't multiply by 1000)
+    return new Date(timestamp).toLocaleDateString("en-US", {
       year: "numeric",
       month: "long",
       day: "numeric"

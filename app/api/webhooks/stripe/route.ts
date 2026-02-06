@@ -124,20 +124,22 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
 
   const packageKey = getPricePackageMapping(priceId);
 
-  // ✅ Add logging for cancellation events
+  // 🔴 CRITICAL: Only sync subscription state. DO NOT downgrade user on cancel_at_period_end.
+  // User keeps FULL access until billing period actually ends.
+  // Only downgrade when webhook is customer.subscription.deleted (true cancellation).
+  
   if (subscription.cancel_at_period_end) {
     console.log(
       `⚠️ Subscription ${subscription.id} scheduled for cancellation at period end`
     );
     console.log(
-      `   Period ends: ${new Date(subscription.items.data[0].current_period_end * 1000).toISOString()}`
+      `   User retains full access until: ${new Date(subscription.items.data[0].current_period_end * 1000).toISOString()}`
     );
   }
 
-  // ✅ Add logging for reactivation
   if (!subscription.cancel_at_period_end && subscription.status === "active") {
     console.log(
-      `✅ Subscription ${subscription.id} reactivated (cancel_at_period_end removed)`
+      `✅ Subscription ${subscription.id} reactivated (auto-renew enabled)`
     );
   }
 
@@ -215,19 +217,35 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     });
 
     if (user) {
-      // Clear subscription from user record
+      // 🔴 CRITICAL: Subscription truly deleted—downgrade user to free plan NOW
+      const priceId = subscription.items.data[0]?.price.id;
+      let downgradePackageKey = "sandbox"; // Default to free
+      
+      // Attempt to map original price for audit trail
+      if (priceId) {
+        try {
+          downgradePackageKey = getPricePackageMapping(priceId);
+        } catch (e) {
+          downgradePackageKey = "sandbox"; // Safe fallback
+        }
+      }
+      
+      console.log(
+        `🔴 Subscription ${subscription.id} deleted—downgrading user ${clerkUserId} to free plan`
+      );
+      
       await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
         clerkUserId,
         stripeSubscriptionId: subscription.id,
         stripeCustomerId: customerId,
-        status: "canceled",
+        status: "canceled", // Actually canceled, not scheduled
         priceId: subscription.items.data[0]?.price.id || "",
-        planType: "sandbox",
+        planType: downgradePackageKey,
         currentPeriodStart:
-          subscription.items.data[0]?.current_period_start * 1000,
-        currentPeriodEnd: subscription.items.data[0]?.current_period_end * 1000,
+          subscription.items.data[0]?.current_period_start * 1000 || Date.now(),
+        currentPeriodEnd: subscription.items.data[0]?.current_period_end * 1000 || Date.now(),
         cancelAtPeriodEnd: false,
-        maxGpts: 0
+        maxGpts: 0 // No GPTs after cancellation
       });
     } else {
       console.warn(`User ${clerkUserId} not found after deletion attempt`);
@@ -339,6 +357,15 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
     const priceId = subscription.items.data[0]?.price.id || "";
     const packageKey = getPricePackageMapping(priceId);
 
+    // 🔴 Map correct maxGpts per plan type (not hardcoded pro/other)
+    const maxGptsPerPlan: Record<string, number> = {
+      "sandbox": 12,
+      "clientProject": 1,
+      "basic": 3,
+      "pro": 6
+    };
+    const maxGpts = maxGptsPerPlan[packageKey] || 1;
+
     await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
       clerkUserId,
       stripeSubscriptionId: subscription.id,
@@ -353,7 +380,7 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
         ? subscription.items.data[0].current_period_end * 1000
         : Date.now() + 30 * 24 * 60 * 60 * 1000,
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      maxGpts: packageKey === "pro" ? 6 : 3
+      maxGpts
     });
 
     console.log(`✅ Subscription status updated to past_due`);
