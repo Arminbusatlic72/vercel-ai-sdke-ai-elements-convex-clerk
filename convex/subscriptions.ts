@@ -30,12 +30,37 @@ export const syncSubscriptionFromStripe = mutation({
   },
   handler: async (ctx, args) => {
     // 1️⃣ Find user by Clerk ID
-    const user = await ctx.db
+    let user = await ctx.db
       .query("users")
       .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkUserId))
       .unique();
 
-    if (!user) throw new Error(`User not found: ${args.clerkUserId}`);
+    // ✨ NEW: Auto-create user if not found (race condition fix)
+    if (!user) {
+      console.warn(
+        `⚠️ User not found for clerkId: ${args.clerkUserId}. Auto-creating from subscription sync.`
+      );
+
+      const userId = await ctx.db.insert("users", {
+        clerkId: args.clerkUserId,
+        email: "unknown@example.com",
+        name: "User",
+        role: "user",
+        stripeCustomerId: args.stripeCustomerId,
+        subscription: undefined,
+        aiCredits: 10,
+        aiCreditsResetAt: undefined,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      });
+
+      user = await ctx.db.get(userId);
+      console.log(
+        `✅ Created user from subscription sync: ${args.clerkUserId}`
+      );
+    }
+
+    if (!user) throw new Error(`Failed to create user: ${args.clerkUserId}`);
 
     // 2️⃣ Update user's subscription nested field
     // Note: planType is already the correct plan type from webhook

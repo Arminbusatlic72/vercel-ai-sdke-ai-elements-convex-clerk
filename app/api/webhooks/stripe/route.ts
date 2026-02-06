@@ -76,102 +76,30 @@ async function handleStripeEvent(event: Stripe.Event) {
 
 // In app/api/webhooks/stripe/route.ts
 
-// async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
-//   console.log(`🔄 Processing subscription: ${subscription.id}`);
-
-//   try {
-//     // Extract Stripe data
-//     const customerId = subscription.customer as string;
-//     const priceId = subscription.items.data[0]?.price.id;
-
-//     if (!priceId) throw new Error("No price found in subscription");
-
-//     // Determine package from price ID
-//     const packageKey = getPricePackageMapping(priceId);
-
-//     // Get clerkUserId from Stripe metadata
-//     let clerkUserId = subscription.metadata?.clerkUserId;
-
-//     // Fallback 1: If clerkUserId not in metadata, look up user by stripeCustomerId in Convex
-//     if (!clerkUserId) {
-//       console.log(
-//         `⚠️  clerkUserId not in subscription metadata, looking up by stripeCustomerId in Convex...`
-//       );
-//       const users = await convex.query(api.users.getByStripeCustomerId, {
-//         stripeCustomerId: customerId
-//       });
-
-//       if (users && users.length > 0) {
-//         clerkUserId = users[0].clerkId;
-//         console.log(`✅ Found clerkUserId from Convex lookup: ${clerkUserId}`);
-//       } else {
-//         // Fallback 2: Check Stripe customer object metadata
-//         console.log(
-//           `⚠️  No user found in Convex, checking Stripe customer metadata...`
-//         );
-//         const customer = await stripe.customers.retrieve(customerId);
-
-//         // Check if customer is deleted before accessing metadata
-//         if ("deleted" in customer && customer.deleted) {
-//           throw new Error(
-//             `Customer ${customerId} has been deleted. Cannot retrieve clerkUserId.`
-//           );
-//         }
-
-//         clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
-
-//         if (!clerkUserId) {
-//           throw new Error(
-//             `Cannot find clerkUserId for subscription ${subscription.id}. ` +
-//               `Not in subscription metadata, Convex DB, or Stripe customer metadata. ` +
-//               `Customer ID: ${customerId}`
-//           );
-//         }
-//         console.log(
-//           `✅ Found clerkUserId from Stripe customer metadata: ${clerkUserId}`
-//         );
-//       }
-//     }
-
-//     // ✅ Call Convex mutation to update database
-//     await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
-//       clerkUserId,
-//       stripeSubscriptionId: subscription.id,
-//       stripeCustomerId: customerId,
-//       status: subscription.status,
-//       priceId,
-//       planType: packageKey, // Pass plan type directly (not packageKey)
-//       currentPeriodStart: subscription.items.data[0].current_period_start
-//         ? subscription.items.data[0].current_period_start * 1000
-//         : Date.now(),
-//       currentPeriodEnd: subscription.items.data[0].current_period_end
-//         ? subscription.items.data[0].current_period_end * 1000
-//         : Date.now() + 30 * 24 * 60 * 60 * 1000,
-//       cancelAtPeriodEnd: subscription.cancel_at_period_end,
-//       maxGpts: packageKey === "pro" ? 6 : 3
-//     });
-
-//     console.log(`✅ User subscription updated in Convex`);
-//     return { success: true };
-//   } catch (error) {
-//     console.error(`❌ Subscription update failed:`, error);
-//     return { success: false };
-//   }
-// }
-
 async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
   const customerId = subscription.customer as string;
   const priceId = subscription.items.data[0]?.price.id;
 
-  // ✅ Use the metadata we see in your JSON!
   let clerkUserId = subscription.metadata?.clerkUserId;
 
+  // Fallback 1: Look up by Stripe customer ID
   if (!clerkUserId) {
-    // DB Fallback if metadata is somehow missing
-    const users = await convex.query(api.users.getByStripeCustomerId, {
-      stripeCustomerId: customerId
-    });
-    clerkUserId = users?.[0]?.clerkId;
+    try {
+      const users = await convex.query(api.users.getByStripeCustomerId, {
+        stripeCustomerId: customerId
+      });
+      clerkUserId = users?.clerkId;
+    } catch (e) {
+      // Fallback 2: Check Stripe customer metadata
+      try {
+        const customer = await stripe.customers.retrieve(customerId);
+        if (!("deleted" in customer) || !customer.deleted) {
+          clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
+        }
+      } catch (err) {
+        console.warn("Could not retrieve Stripe customer metadata:", err);
+      }
+    }
   }
 
   if (!clerkUserId) {
@@ -182,7 +110,36 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
     return { success: false };
   }
 
+  // ✨ NEW: Auto-create user if not found (fixes race condition)
+  try {
+    await convex.mutation(api.users.getOrCreateUserFromWebhook, {
+      clerkId: clerkUserId,
+      email: subscription.metadata?.email,
+      name: subscription.metadata?.name
+    });
+  } catch (error) {
+    console.error(`❌ Failed to ensure user exists for webhook: ${error}`);
+    return { success: false };
+  }
+
   const packageKey = getPricePackageMapping(priceId);
+
+  // ✅ Add logging for cancellation events
+  if (subscription.cancel_at_period_end) {
+    console.log(
+      `⚠️ Subscription ${subscription.id} scheduled for cancellation at period end`
+    );
+    console.log(
+      `   Period ends: ${new Date(subscription.items.data[0].current_period_end * 1000).toISOString()}`
+    );
+  }
+
+  // ✅ Add logging for reactivation
+  if (!subscription.cancel_at_period_end && subscription.status === "active") {
+    console.log(
+      `✅ Subscription ${subscription.id} reactivated (cancel_at_period_end removed)`
+    );
+  }
 
   await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
     clerkUserId,
@@ -194,9 +151,12 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
     currentPeriodStart: subscription.items.data[0].current_period_start * 1000,
     currentPeriodEnd: subscription.items.data[0].current_period_end * 1000,
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
-    // You can set maxGpts based on packageKey logic here
     maxGpts: packageKey === "sandbox" ? 12 : 1
   });
+
+  console.log(
+    `✅ Subscription ${subscription.id} synced with cancelAtPeriodEnd: ${subscription.cancel_at_period_end}`
+  );
 
   return { success: true };
 }
@@ -211,31 +171,43 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 
     // Fallback 1: Look up by stripeCustomerId in Convex
     if (!clerkUserId) {
-      const users = await convex.query(api.users.getByStripeCustomerId, {
-        stripeCustomerId: customerId
-      });
+      try {
+        const users = await convex.query(api.users.getByStripeCustomerId, {
+          stripeCustomerId: customerId
+        });
 
-      if (users && users.length > 0) {
-        clerkUserId = users[0].clerkId;
-      } else {
-        // Fallback 2: Check Stripe customer metadata
-        const customer = await stripe.customers.retrieve(customerId);
+        if (users) {
+          clerkUserId = users.clerkId;
+        } else {
+          // Fallback 2: Check Stripe customer metadata
+          const customer = await stripe.customers.retrieve(customerId);
 
-        // Check if customer is deleted before accessing metadata
-        if ("deleted" in customer && customer.deleted) {
-          throw new Error(
-            `Cannot find clerkUserId for deleted subscription ${subscription.id}. Customer is deleted.`
-          );
+          // Check if customer is deleted before accessing metadata
+          if (!("deleted" in customer) || !customer.deleted) {
+            clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
+          }
         }
-
-        clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
-
-        if (!clerkUserId) {
-          throw new Error(
-            `Cannot find clerkUserId for deleted subscription ${subscription.id}`
-          );
-        }
+      } catch (err) {
+        console.warn("Could not lookup user by Stripe customer:", err);
       }
+    }
+
+    if (!clerkUserId) {
+      console.warn(
+        `⚠️ Cannot find clerkUserId for deleted subscription ${subscription.id}. Skipping.`
+      );
+      return { success: true }; // Return success to prevent retry
+    }
+
+    // ✨ NEW: Ensure user exists (in case it was deleted from DB)
+    try {
+      await convex.mutation(api.users.getOrCreateUserFromWebhook, {
+        clerkId: clerkUserId
+      });
+    } catch (error) {
+      console.error(
+        `⚠️ Could not auto-create user for subscription deletion: ${error}`
+      );
     }
 
     const user = await convex.query(api.users.getUserByClerkId, {
@@ -250,13 +222,15 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
         stripeCustomerId: customerId,
         status: "canceled",
         priceId: subscription.items.data[0]?.price.id || "",
-        planType: "sandbox", // ✅ CHANGED from packageKey: "free" to planType: "sandbox"
+        planType: "sandbox",
         currentPeriodStart:
           subscription.items.data[0]?.current_period_start * 1000,
         currentPeriodEnd: subscription.items.data[0]?.current_period_end * 1000,
         cancelAtPeriodEnd: false,
         maxGpts: 0
       });
+    } else {
+      console.warn(`User ${clerkUserId} not found after deletion attempt`);
     }
 
     console.log(`✅ Subscription ${subscription.id} marked as deleted`);
@@ -321,31 +295,45 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
 
     if (!clerkUserId) {
       // Fallback 1: Look up by stripeCustomerId in Convex
-      const users = await convex.query(api.users.getByStripeCustomerId, {
-        stripeCustomerId: customerId
-      });
+      try {
+        const users = await convex.query(api.users.getByStripeCustomerId, {
+          stripeCustomerId: customerId
+        });
 
-      if (users && users.length > 0) {
-        clerkUserId = users[0].clerkId;
-      } else {
-        // Fallback 2: Check Stripe customer metadata
-        const customer = await stripe.customers.retrieve(customerId);
+        if (users) {
+          clerkUserId = users.clerkId;
+        } else {
+          // Fallback 2: Check Stripe customer metadata
+          const customer = await stripe.customers.retrieve(customerId);
 
-        // Check if customer is deleted before accessing metadata
-        if ("deleted" in customer && customer.deleted) {
-          throw new Error(
-            `Cannot find clerkUserId for failed invoice ${invoice.id}. Customer is deleted.`
-          );
+          // Check if customer is deleted before accessing metadata
+          if (!("deleted" in customer) || !customer.deleted) {
+            clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
+          }
         }
-
-        clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
-
-        if (!clerkUserId) {
-          throw new Error(
-            `Cannot find clerkUserId for failed invoice ${invoice.id}`
-          );
-        }
+      } catch (err) {
+        console.warn("Could not lookup user for payment failure:", err);
       }
+    }
+
+    if (!clerkUserId) {
+      console.warn(
+        `⚠️ Cannot find clerkUserId for payment failure on invoice ${invoice.id}. Skipping.`
+      );
+      return { success: true };
+    }
+
+    // ✨ NEW: Ensure user exists before updating subscription
+    try {
+      await convex.mutation(api.users.getOrCreateUserFromWebhook, {
+        clerkId: clerkUserId,
+        email:
+          subscription.metadata?.email || (invoice.customer_email ?? undefined)
+      });
+    } catch (error) {
+      console.error(
+        `⚠️ Could not auto-create user for payment failure: ${error}`
+      );
     }
 
     const priceId = subscription.items.data[0]?.price.id || "";
@@ -357,7 +345,7 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
       stripeCustomerId: customerId,
       status: "past_due",
       priceId,
-      planType: packageKey, // Pass plan type directly
+      planType: packageKey,
       currentPeriodStart: subscription.items.data[0].current_period_start
         ? subscription.items.data[0].current_period_start * 1000
         : Date.now(),

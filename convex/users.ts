@@ -741,6 +741,56 @@ export const getUserByStripeCustomerId = query({
 });
 
 /**
+ * Get or create user from Stripe webhook
+ * This is critical for handling the race condition where webhooks fire
+ * before the user has synced via syncCurrentUser.
+ *
+ * Called by Stripe webhook handlers to ensure user exists.
+ */
+export const getOrCreateUserFromWebhook = internalMutation({
+  args: {
+    clerkId: v.string(),
+    email: v.optional(v.string()),
+    name: v.optional(v.string()),
+    imageUrl: v.optional(v.string())
+  },
+  handler: async (ctx, args) => {
+    // Try to find existing user
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    if (existingUser) {
+      return existingUser;
+    }
+
+    // User doesn't exist yet - create with minimal info from webhook
+    console.warn(
+      `⚠️ User not found for clerkId: ${args.clerkId}. Creating from webhook data.`
+    );
+
+    const userId = await ctx.db.insert("users", {
+      clerkId: args.clerkId,
+      email: args.email || "unknown@example.com",
+      name: args.name || "User",
+      imageUrl: args.imageUrl,
+      role: "user", // Default role
+      stripeCustomerId: undefined, // Will be set later by webhook
+      subscription: undefined,
+      aiCredits: 10, // Starter credits
+      aiCreditsResetAt: undefined,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+
+    const newUser = await ctx.db.get(userId);
+    console.log(`✅ Created user from webhook: ${args.clerkId}`);
+    return newUser;
+  }
+});
+
+/**
  * Get user by Clerk ID (you probably already have this)
  */
 export const getUserByClerkId = query({
