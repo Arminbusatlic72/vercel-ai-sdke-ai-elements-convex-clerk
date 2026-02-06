@@ -282,6 +282,22 @@ export const createSubscription = action({
   },
   handler: async (ctx, args) => {
     const stripe = getStripe();
+    // Ensure the user exists in Convex before creating a Stripe subscription.
+    // If missing, auto-create a minimal user from provided data to avoid webhook race conditions.
+    // Prefer using the public query to avoid direct `ctx.db` access issues in some runtimes.
+    let existingUser = await ctx.runQuery(api.users.getUserByClerkId, {
+      clerkId: args.clerkUserId
+    });
+
+    if (!existingUser) {
+      // Auto-create a minimal user when missing to avoid webhook race conditions.
+      existingUser = await ctx.runMutation(api.users.getOrCreateUserFromWebhook, {
+        clerkId: args.clerkUserId,
+        email: args.email,
+        name: undefined,
+        imageUrl: undefined
+      });
+    }
     // 1. Find or Create Customer
     let customerId: string;
     const customers = await stripe.customers.list({

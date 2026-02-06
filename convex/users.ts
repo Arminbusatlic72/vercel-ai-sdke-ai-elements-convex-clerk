@@ -747,7 +747,7 @@ export const getUserByStripeCustomerId = query({
  *
  * Called by Stripe webhook handlers to ensure user exists.
  */
-export const getOrCreateUserFromWebhook = internalMutation({
+export const getOrCreateUserFromWebhook = mutation({
   args: {
     clerkId: v.string(),
     email: v.optional(v.string()),
