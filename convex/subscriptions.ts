@@ -335,9 +335,10 @@ export const getSubscriptionHealth = query({
         ? now // Already expired
         : sub.currentPeriodEnd || now;
 
-    const daysUntilExpiration = Math.ceil(
-      (expirationTime - now) / (1000 * 60 * 60 * 24)
-    );
+    // Only calculate if expirationTime exists
+    const daysUntilExpiration = expirationTime
+      ? Math.ceil((expirationTime - now) / (1000 * 60 * 60 * 24))
+      : null;
 
     // ✅ Determine status message key for frontend
     let statusKey: string;

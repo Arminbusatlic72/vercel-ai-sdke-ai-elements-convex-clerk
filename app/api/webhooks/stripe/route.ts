@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       const existing = await convex.query(api.webhooks.getWebhookEvent, {
         stripeEventId: event.id
       });
-      
+
       if (existing && existing.status === "success") {
         console.log(`⚠️ Event ${event.id} already processed, skipping...`);
         return NextResponse.json({ received: true });
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
 
     // Route to appropriate handler
     const result = await handleStripeEvent(event);
-    
+
     // 🔴 RECORD WEBHOOK PROCESSING
     try {
       await convex.mutation(api.webhooks.recordWebhookEvent, {
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     } catch (e) {
       console.warn("Failed to record webhook event:", e);
     }
-    
+
     return NextResponse.json({ received: result.success });
   } catch (error: any) {
     console.error(`❌ Webhook error: ${error.message}`);
@@ -125,7 +125,7 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
       const users = await convex.query(api.users.getByStripeCustomerId, {
         stripeCustomerId: customerId
       });
-      clerkUserId = users?.clerkId;
+      clerkUserId = users?.[0]?.clerkId;
     } catch (e) {
       // Fallback 2: Check Stripe customer metadata
       try {
@@ -184,7 +184,9 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
   let trialEndDate: number | undefined;
   if (subscription.status === "trialing" && subscription.trial_end) {
     trialEndDate = subscription.trial_end * 1000; // Convert to milliseconds
-    console.log(`📅 Trial period ends: ${new Date(trialEndDate).toISOString()}`);
+    console.log(
+      `📅 Trial period ends: ${new Date(trialEndDate).toISOString()}`
+    );
   }
 
   // 🔴 Map correct maxGpts per plan type
@@ -235,8 +237,8 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
           stripeCustomerId: customerId
         });
 
-        if (users) {
-          clerkUserId = users.clerkId;
+        if (users && users.length > 0) {
+          clerkUserId = users[0].clerkId;
         } else {
           // Fallback 2: Check Stripe customer metadata
           const customer = await stripe.customers.retrieve(customerId);
@@ -276,7 +278,8 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     if (user) {
       // 🔴 CRITICAL: Subscription truly deleted—downgrade user to free plan NOW
       const priceId = subscription.items.data[0]?.price.id;
-      let downgradePackageKey = "sandbox"; // Default to free
+      let downgradePackageKey: "sandbox" | "clientProject" | "basic" | "pro" =
+        "sandbox"; // Default to free
 
       // Attempt to map original price for audit trail
       if (priceId) {
@@ -381,8 +384,8 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
           stripeCustomerId: customerId
         });
 
-        if (users) {
-          clerkUserId = users.clerkId;
+        if (users && users.length > 0) {
+          clerkUserId = users[0].clerkId;
         } else {
           // Fallback 2: Check Stripe customer metadata
           const customer = await stripe.customers.retrieve(customerId);
@@ -432,8 +435,7 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
     // ✅ NEW: Implement 7-day grace period
     // User enters past_due state but retains full access for 7 days to recover payment
     const gracePeriodDays = 7;
-    const gracePeriodEnd =
-      Date.now() + gracePeriodDays * 24 * 60 * 60 * 1000;
+    const gracePeriodEnd = Date.now() + gracePeriodDays * 24 * 60 * 60 * 1000;
 
     console.log(
       `⏳ Setting 7-day grace period for past_due. Access retained until: ${new Date(gracePeriodEnd).toISOString()}`
@@ -478,7 +480,9 @@ async function handleCheckoutSessionCompleted(
     // Checkout session contains subscription ID if it was a subscription checkout
     const subscriptionId = session.subscription as string | null;
     if (!subscriptionId) {
-      console.log(`ℹ️ Checkout ${session.id} is not a subscription, skipping...`);
+      console.log(
+        `ℹ️ Checkout ${session.id} is not a subscription, skipping...`
+      );
       return { success: true };
     }
 
@@ -502,7 +506,7 @@ async function handleCheckoutSessionCompleted(
 
     // Fetch the actual subscription from Stripe
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    
+
     // Process as a subscription update (same logic)
     return await handleSubscriptionUpdate(subscription);
   } catch (error) {
