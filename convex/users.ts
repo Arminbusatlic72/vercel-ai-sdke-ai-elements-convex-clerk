@@ -163,14 +163,14 @@ async function claimPendingSubscription(
   try {
     const pending = await ctx.db
       .query("pendingSubscriptions")
-      .withIndex("by_email", (q) => q.eq("email", email))
+      .withIndex("by_email", (q: any) => q.eq("email", email))
       .first();
 
     if (!pending) return; // No pending subscription
 
     const user = await ctx.db
       .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkUserId))
+      .withIndex("by_clerkId", (q: any) => q.eq("clerkId", clerkUserId))
       .first();
 
     if (!user) return;

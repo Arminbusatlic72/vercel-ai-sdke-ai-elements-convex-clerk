@@ -158,7 +158,7 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
     // Save pending subscription (use email if available, otherwise use empty string as placeholder)
     try {
       await convex.mutation(api.webhooks.savePendingSubscriptionByEmail, {
-        email: email || "", // Allow empty email for test scenarios
+        email: email ?? "", // Ensure it's always a string, never null
         stripeSubscriptionId: subscription.id,
         stripeCustomerId: customerId,
         priceId,
