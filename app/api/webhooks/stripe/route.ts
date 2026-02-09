@@ -140,11 +140,43 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
   }
 
   if (!clerkUserId) {
-    console.error(
-      "❌ Critical: No clerkUserId found for subscription",
-      subscription.id
+    // ✅ NEW: No clerkUserId found — this is an external purchase (e.g., Squarespace)
+    // Save as pending subscription keyed by email for later claiming
+    console.log(
+      `ℹ️ No clerkUserId found for subscription ${subscription.id} — treating as external purchase`
     );
-    return { success: false };
+
+    const email =
+      subscription.metadata?.email || (await getCustomerEmail(customerId));
+
+    if (!email) {
+      console.warn(
+        `⚠️ No email found for external subscription — saving with empty email as placeholder`
+      );
+    }
+
+    // Save pending subscription (use email if available, otherwise use empty string as placeholder)
+    try {
+      await convex.mutation(api.webhooks.savePendingSubscriptionByEmail, {
+        email: email || "", // Allow empty email for test scenarios
+        stripeSubscriptionId: subscription.id,
+        stripeCustomerId: customerId,
+        priceId,
+        status: subscription.status,
+        currentPeriodEnd: subscription.items.data[0].current_period_end
+          ? subscription.items.data[0].current_period_end * 1000
+          : undefined
+      });
+
+      console.log(
+        `✅ Saved pending subscription for external purchase (customerId: ${customerId}, email: ${email || "N/A"})`
+      );
+
+      return { success: true };
+    } catch (error) {
+      console.error(`❌ Failed to save pending subscription: ${error}`);
+      return { success: false };
+    }
   }
 
   // ✨ NEW: Auto-create user if not found (fixes race condition)
@@ -549,4 +581,23 @@ function getPricePackageMapping(
   }
 
   return planType;
+}
+// Helper: Get customer email from Stripe
+async function getCustomerEmail(
+  customerId?: string | null
+): Promise<string | null> {
+  if (!customerId) return null;
+  try {
+    const customer = await stripe.customers.retrieve(customerId);
+    if (typeof customer === "object" && !("deleted" in customer)) {
+      return (
+        (customer as Stripe.Customer).email ||
+        (customer as Stripe.Customer).metadata?.email ||
+        null
+      );
+    }
+  } catch (e) {
+    console.warn("Could not retrieve customer email:", e);
+  }
+  return null;
 }

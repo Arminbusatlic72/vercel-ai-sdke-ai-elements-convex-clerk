@@ -13,7 +13,7 @@ export default function LandingPage() {
             StoryEngine Sandbox
           </h1>
           <p className="max-w-[600px] text-lg text-gray-600 md:text-xl/relaxed xl:text-2xl/relaxed">
-            Generative AI assistant that organize, surface, and structure
+            Generative AI assistants that organize, surface, and structure
             signals so that sensemaking can occur.
             <br />
             <span className="text-gray-400 text-sm">

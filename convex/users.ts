@@ -91,6 +91,7 @@ export const getByStripeSubscriptionId = query({
 /**
  * Syncs user from Clerk to Convex.
  * Called on every login/app load to ensure DB is current.
+ * Also claims any pending subscriptions from external Stripe purchases.
  */
 export const syncCurrentUser = mutation({
   args: {},
@@ -121,7 +122,14 @@ export const syncCurrentUser = mutation({
 
     if (existingUser) {
       await ctx.db.patch(existingUser._id, userData);
-      return await ctx.db.get(existingUser._id);
+      const user = await ctx.db.get(existingUser._id);
+
+      // Check for pending subscription (external purchase) and claim if found
+      if (userData.email) {
+        await claimPendingSubscription(ctx, identity.subject, userData.email);
+      }
+
+      return user;
     }
 
     // Create new user with default values
@@ -135,9 +143,91 @@ export const syncCurrentUser = mutation({
       createdAt: Date.now()
     });
 
-    return await ctx.db.get(userId);
+    const user = await ctx.db.get(userId);
+
+    // Check for pending subscription from Squarespace purchase and claim it
+    if (userData.email) {
+      await claimPendingSubscription(ctx, identity.subject, userData.email);
+    }
+
+    return user;
   }
 });
+
+// Helper: Claim pending subscription by email
+async function claimPendingSubscription(
+  ctx: any,
+  clerkUserId: string,
+  email: string
+) {
+  try {
+    const pending = await ctx.db
+      .query("pendingSubscriptions")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .first();
+
+    if (!pending) return; // No pending subscription
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkUserId))
+      .first();
+
+    if (!user) return;
+
+    // Map price to plan type
+    const planType = mapPriceToPlanType(pending.priceId || "");
+    const maxGpts = mapPlanToMaxGpts(planType);
+
+    // Attach subscription to user
+    await ctx.db.patch(user._id, {
+      stripeCustomerId: pending.stripeCustomerId || user.stripeCustomerId,
+      subscription: {
+        status: (pending.status || "active") as any,
+        stripeSubscriptionId: pending.stripeSubscriptionId,
+        plan: planType,
+        priceId: pending.priceId || "",
+        currentPeriodStart: Date.now(),
+        currentPeriodEnd:
+          pending.currentPeriodEnd || Date.now() + 30 * 24 * 60 * 60 * 1000,
+        cancelAtPeriodEnd: false,
+        maxGpts,
+        gptIds: []
+      },
+      updatedAt: Date.now()
+    });
+
+    // Delete pending subscription record
+    await ctx.db.delete(pending._id);
+
+    console.log(`✅ Claimed pending subscription for ${email}`);
+  } catch (e) {
+    console.warn(`Could not claim pending subscription for ${email}:`, e);
+  }
+}
+
+// Helper: Map price ID to plan type
+function mapPriceToPlanType(
+  priceId: string
+): "sandbox" | "clientProject" | "basic" | "pro" {
+  if (!priceId) return "sandbox";
+  if (priceId === process.env.STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY)
+    return "clientProject";
+  if (priceId === process.env.STRIPE_PRICE_BASIC_ID) return "basic";
+  if (priceId === process.env.STRIPE_PRICE_PRO_ID) return "pro";
+  return "sandbox";
+}
+
+// Helper: Map plan to max GPTs
+function mapPlanToMaxGpts(plan: string) {
+  const map: Record<string, number> = {
+    sandbox: 12,
+    clientProject: 1,
+    basic: 3,
+    pro: 6
+  };
+  return map[plan] || 1;
+}
 
 /**
  * Update user subscription (for use with Stripe webhooks)
@@ -737,6 +827,19 @@ export const getUserByStripeCustomerId = query({
       .query("users")
       .filter((q) => q.eq(q.field("stripeCustomerId"), args.stripeCustomerId))
       .unique();
+  }
+});
+
+// Get user by email (used for external Stripe purchases mapping)
+export const getUserByEmail = query({
+  args: {
+    email: v.string()
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
   }
 });
 

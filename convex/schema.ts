@@ -53,6 +53,7 @@ export default defineSchema({
     updatedAt: v.number()
   })
     .index("by_clerkId", ["clerkId"])
+    .index("by_email", ["email"])
     .index("by_role", ["role"])
     .index("by_stripeCustomerId", ["stripeCustomerId"])
     .index("by_subscription_status", ["subscription.status"]), // ✅ New index
@@ -177,5 +178,16 @@ export default defineSchema({
   })
     .index("by_key", ["key"])
     .index("by_stripePriceId", ["stripePriceId"])
-    .index("by_tier", ["tier"]) // Add tier index
+    .index("by_tier", ["tier"]), // Add tier index
+
+  // Minimal table to hold subscriptions received externally (mapped by email)
+  pendingSubscriptions: defineTable({
+    email: v.string(),
+    stripeSubscriptionId: v.string(),
+    stripeCustomerId: v.optional(v.string()),
+    priceId: v.optional(v.string()),
+    status: v.optional(v.string()),
+    currentPeriodEnd: v.optional(v.number()),
+    createdAt: v.number()
+  }).index("by_email", ["email"])
 });
