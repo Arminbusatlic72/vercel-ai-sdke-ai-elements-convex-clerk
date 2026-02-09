@@ -16,7 +16,7 @@ export const seedPackages = mutation({
         durationDays: 30,
         priceAmount: 50000,
         recurring: "monthly" as const,
-        description: "Full access to all GPTs"
+        description: "Full access to all GPTs hello"
       },
       {
         name: "Client Project GPTs",

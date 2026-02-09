@@ -12,20 +12,6 @@ export default function PackageCard({
   isSelected,
   onSelect
 }: PackageCardProps) {
-  // Format price for display
-  // const formatPrice = () => {
-  //   if (pkg.priceAmount === 0) {
-  //     if (pkg.tier === "trial") {
-  //       return `Free ${pkg.durationDays || 30}-Day Trial`;
-  //     }
-  //     return "Free";
-  //   }
-
-  //   const dollars = pkg.priceAmount ?? 0 / 100;
-  //   const recurring = pkg.recurring === "monthly" ? "/month" : "/year";
-  //   return `$${dollars}${recurring}`;
-  // };
-
   const formatPrice = () => {
     if (pkg.priceAmount === 0) {
       if (pkg.tier === "trial") {

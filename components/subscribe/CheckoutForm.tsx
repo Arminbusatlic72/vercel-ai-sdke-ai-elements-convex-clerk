@@ -21,20 +21,14 @@ export default function CheckoutForm() {
   const packages: Package[] = useQuery(api.packages.getAllPackages) || [];
 
   const activePackages: Package[] = packages
-    .filter((pkg) => pkg.stripePriceId)
+    .filter((pkg) => pkg.stripePriceId && (pkg.priceAmount || 0) > 0)
     .sort((a, b) => {
       const aPrice = a.priceAmount || 0;
       const bPrice = b.priceAmount || 0;
-
-      if (aPrice > 0 && bPrice === 0) return -1;
-      if (aPrice === 0 && bPrice > 0) return 1;
       return bPrice - aPrice;
     });
 
-  const defaultPackage =
-    activePackages.find(
-      (pkg) => (pkg.priceAmount || 0) > 0 || pkg.key === "client-project"
-    ) || activePackages[0];
+  const defaultPackage = activePackages[0];
 
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(
     null
