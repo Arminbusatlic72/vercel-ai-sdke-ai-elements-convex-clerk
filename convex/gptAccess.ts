@@ -61,12 +61,24 @@ export const getAvailableGptsForUser = query({
     }
 
     // 4. Get package details to find which GPTs are included
-    const packageData = await ctx.db
-      .query("packages")
-      .withIndex("by_stripePriceId", (q) =>
-        q.eq("stripePriceId", subscription.priceId)
-      )
-      .unique();
+    let packageData;
+    if (subscription.productId) {
+      packageData = await ctx.db
+        .query("packages")
+        .withIndex("by_stripeProductId", (q) =>
+          q.eq("stripeProductId", subscription.productId as string)
+        )
+        .unique();
+    } else if (subscription.priceId) {
+      packageData = await ctx.db
+        .query("packages")
+        .withIndex("by_stripePriceId", (q) =>
+          q.eq("stripePriceId", subscription.priceId as string)
+        )
+        .unique();
+    } else {
+      packageData = null;
+    }
 
     if (!packageData) {
       return {
@@ -159,12 +171,24 @@ export const checkGptAccess = query({
     }
 
     // 4. Get package and verify GPT belongs to user's package
-    const packageData = await ctx.db
-      .query("packages")
-      .withIndex("by_stripePriceId", (q) =>
-        q.eq("stripePriceId", user.subscription!.priceId)
-      )
-      .unique();
+    let packageData;
+    if (user.subscription!.productId) {
+      packageData = await ctx.db
+        .query("packages")
+        .withIndex("by_stripeProductId", (q) =>
+          q.eq("stripeProductId", user.subscription!.productId as string)
+        )
+        .unique();
+    } else if (user.subscription!.priceId) {
+      packageData = await ctx.db
+        .query("packages")
+        .withIndex("by_stripePriceId", (q) =>
+          q.eq("stripePriceId", user.subscription!.priceId as string)
+        )
+        .unique();
+    } else {
+      packageData = null;
+    }
 
     if (!packageData) {
       return {
@@ -206,12 +230,24 @@ export const getSubscriptionSummary = query({
       return null;
     }
 
-    const packageData = await ctx.db
-      .query("packages")
-      .withIndex("by_stripePriceId", (q) =>
-        q.eq("stripePriceId", user.subscription!.priceId)
-      )
-      .unique();
+    let packageData;
+    if (user.subscription!.productId) {
+      packageData = await ctx.db
+        .query("packages")
+        .withIndex("by_stripeProductId", (q) =>
+          q.eq("stripeProductId", user.subscription!.productId as string)
+        )
+        .unique();
+    } else if (user.subscription!.priceId) {
+      packageData = await ctx.db
+        .query("packages")
+        .withIndex("by_stripePriceId", (q) =>
+          q.eq("stripePriceId", user.subscription!.priceId as string)
+        )
+        .unique();
+    } else {
+      packageData = null;
+    }
 
     const isActive =
       (user.subscription.status === "active" ||

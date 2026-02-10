@@ -16,7 +16,8 @@ export const syncSubscriptionFromStripe = mutation({
       v.literal("unpaid"),
       v.literal("paused")
     ),
-    priceId: v.string(),
+    productId: v.string(),
+    priceId: v.optional(v.string()),
     planType: v.union(
       v.literal("sandbox"),
       v.literal("clientProject"),
@@ -77,6 +78,7 @@ export const syncSubscriptionFromStripe = mutation({
         status: args.status,
         stripeSubscriptionId: args.stripeSubscriptionId,
         plan: args.planType,
+        productId: args.productId,
         priceId: args.priceId,
         currentPeriodStart: args.currentPeriodStart,
         currentPeriodEnd: args.currentPeriodEnd,
@@ -113,7 +115,8 @@ export const syncSubscriptionFromStripe = mutation({
         status: args.status,
         currentPeriodEnd: args.currentPeriodEnd,
         cancelAtPeriodEnd: args.cancelAtPeriodEnd,
-        planType: args.planType
+        planType: args.planType,
+        productId: args.productId
       });
     } else {
       await ctx.db.insert("subscriptions", {
@@ -122,7 +125,8 @@ export const syncSubscriptionFromStripe = mutation({
         stripeSubscriptionId: args.stripeSubscriptionId,
         stripeCustomerId: args.stripeCustomerId,
         status: args.status,
-        priceId: args.priceId,
+        productId: args.productId,
+        priceId: args.priceId!,
         planType: args.planType,
         currentPeriodStart: args.currentPeriodStart,
         currentPeriodEnd: args.currentPeriodEnd,

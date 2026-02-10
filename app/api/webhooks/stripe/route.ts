@@ -116,6 +116,7 @@ async function handleStripeEvent(event: Stripe.Event) {
 async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
   const customerId = subscription.customer as string;
   const priceId = subscription.items.data[0]?.price.id;
+  const productId = subscription.items.data[0]?.price.product as string;
 
   let clerkUserId = subscription.metadata?.clerkUserId;
 
@@ -161,6 +162,7 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
         email: email ?? "", // Ensure it's always a string, never null
         stripeSubscriptionId: subscription.id,
         stripeCustomerId: customerId,
+        productId,
         priceId,
         status: subscription.status,
         currentPeriodEnd: subscription.items.data[0].current_period_end
@@ -235,6 +237,7 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
     stripeSubscriptionId: subscription.id,
     stripeCustomerId: customerId,
     status: subscription.status,
+    productId,
     priceId,
     planType: packageKey,
     currentPeriodStart: subscription.items.data[0].current_period_start * 1000,
@@ -332,6 +335,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
         stripeCustomerId: customerId,
         status: "canceled", // Actually canceled, not scheduled
         priceId: subscription.items.data[0]?.price.id || "",
+        productId: subscription.items.data[0]?.price.product as string,
         planType: downgradePackageKey,
         currentPeriodStart:
           subscription.items.data[0]?.current_period_start * 1000 || Date.now(),
@@ -479,6 +483,7 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
       stripeCustomerId: customerId,
       status: "past_due",
       priceId,
+      productId: subscription.items.data[0]?.price.product as string,
       planType: packageKey,
       currentPeriodStart: subscription.items.data[0].current_period_start
         ? subscription.items.data[0].current_period_start * 1000

@@ -51,8 +51,8 @@ export const createChat = mutation({
       // Find the package that matches this subscription's priceId
       const matchedPackage = await ctx.db
         .query("packages")
-        .withIndex("by_stripePriceId", (q) =>
-          q.eq("stripePriceId", subscription.priceId)
+        .withIndex("by_stripeProductId", (q) =>
+          q.eq("stripeProductId", subscription.productId ?? "")
         )
         .unique();
 

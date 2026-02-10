@@ -93,6 +93,7 @@ export async function POST(request: Request) {
           stripeCustomerId: result.customerId,
           status: subscription.status,
           priceId: priceId,
+          productId: subscription.items.data[0].price.product as string,
           planType: planType,
           currentPeriodStart: subscription.items.data[0].current_period_start,
           currentPeriodEnd: subscription.items.data[0].current_period_end,

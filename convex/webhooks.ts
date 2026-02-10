@@ -69,6 +69,7 @@ export const savePendingSubscriptionByEmail = mutation({
     email: v.string(),
     stripeSubscriptionId: v.string(),
     stripeCustomerId: v.optional(v.string()),
+    productId: v.optional(v.string()),
     priceId: v.optional(v.string()),
     status: v.optional(v.string()),
     currentPeriodEnd: v.optional(v.number())
@@ -86,6 +87,7 @@ export const savePendingSubscriptionByEmail = mutation({
     if (existing) {
       await ctx.db.patch(existing._id, {
         stripeCustomerId: args.stripeCustomerId,
+        productId: args.productId,
         priceId: args.priceId,
         status: args.status,
         currentPeriodEnd: args.currentPeriodEnd,
@@ -98,6 +100,7 @@ export const savePendingSubscriptionByEmail = mutation({
       email: args.email,
       stripeSubscriptionId: args.stripeSubscriptionId,
       stripeCustomerId: args.stripeCustomerId,
+      productId: args.productId,
       priceId: args.priceId,
       status: args.status,
       currentPeriodEnd: args.currentPeriodEnd,
@@ -139,8 +142,8 @@ export const claimPendingSubscriptionByEmail = mutation({
       return { success: false, error: "User not found" };
     }
 
-    // Map price to plan type
-    const planType = mapPriceToPlanType(pending.priceId || "");
+    // Map product to plan type
+    const planType = mapProductToPlanType(pending.productId || "");
     const maxGpts = mapPlanToMaxGpts(planType);
 
     // Attach subscription to user
@@ -150,7 +153,8 @@ export const claimPendingSubscriptionByEmail = mutation({
         status: (pending.status || "active") as any,
         stripeSubscriptionId: pending.stripeSubscriptionId,
         plan: planType,
-        priceId: pending.priceId || "",
+        productId: pending.productId || "",
+        priceId: pending.priceId, // Keep for reference
         currentPeriodStart: Date.now(),
         currentPeriodEnd:
           pending.currentPeriodEnd || Date.now() + 30 * 24 * 60 * 60 * 1000,
@@ -168,15 +172,15 @@ export const claimPendingSubscriptionByEmail = mutation({
   }
 });
 
-// Helper: Map price ID to plan type
-function mapPriceToPlanType(
-  priceId: string
+// Helper: Map product ID to plan type
+function mapProductToPlanType(
+  productId: string
 ): "sandbox" | "clientProject" | "basic" | "pro" {
-  if (!priceId) return "sandbox";
-  if (priceId === process.env.STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY)
+  if (!productId) return "sandbox";
+  if (productId === process.env.STRIPE_PRODUCT_SDNA_CLIENT_PROJECT)
     return "clientProject";
-  if (priceId === process.env.STRIPE_PRICE_BASIC_ID) return "basic";
-  if (priceId === process.env.STRIPE_PRICE_PRO_ID) return "pro";
+  if (productId === process.env.STRIPE_PRODUCT_BASIC_ID) return "basic";
+  if (productId === process.env.STRIPE_PRODUCT_PRO_ID) return "pro";
   return "sandbox";
 }
 

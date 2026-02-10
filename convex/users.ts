@@ -47,7 +47,7 @@ export const getUserSubscription = query({
       const pkg = await ctx.db
         .query("packages")
         .withIndex("by_stripePriceId", (q) =>
-          q.eq("stripePriceId", subscription.priceId)
+          q.eq("stripePriceId", subscription.priceId!)
         )
         .first();
 
@@ -503,7 +503,7 @@ export const updateSubscriptionByStripeId = internalMutation({
       stripeSubscriptionId: args.stripeSubscriptionId,
       stripeCustomerId: user.stripeCustomerId || "", // Provide default if undefined
       status: args.status,
-      priceId: user.subscription.priceId,
+      priceId: user.subscription.priceId!,
       planType: updatedSubscription.plan,
       currentPeriodStart: Date.now(),
       currentPeriodEnd: currentPeriodEnd, // This is now a number

@@ -31,7 +31,8 @@ export default defineSchema({
           v.literal("basic"),
           v.literal("pro")
         ),
-        priceId: v.string(),
+        productId: v.optional(v.string()), // Primary matcher (prices change, products don't)
+        priceId: v.optional(v.string()), // Kept for backward compatibility
         productName: v.optional(v.string()),
         currentPeriodStart: v.optional(v.number()), // Track start for trial detection
         currentPeriodEnd: v.optional(v.number()),
@@ -77,6 +78,7 @@ export default defineSchema({
     stripeSubscriptionId: v.string(),
     stripeCustomerId: v.string(),
     status: v.string(),
+    productId: v.optional(v.string()),
     priceId: v.string(),
     planType: v.string(),
     currentPeriodStart: v.number(),
@@ -167,17 +169,21 @@ export default defineSchema({
   packages: defineTable({
     key: v.string(), // e.g., "sandbox-summer"
     name: v.string(), // e.g., "SandBox Summer"
-    stripePriceId: v.string(), // "free_" prefix for free packages
+    stripePriceId: v.string(),
+    stripeProductId: v.string(),
     description: v.optional(v.string()),
     maxGpts: v.optional(v.number()),
     tier: v.string(), // "free", "paid", "trial"
     durationDays: v.optional(v.number()), // For trial/limited packages
     priceAmount: v.optional(v.number()), // For paid packages (in cents)
     recurring: v.optional(v.union(v.literal("monthly"), v.literal("one-time"))),
+    hidden: v.optional(v.boolean()), // Hide from display but keep in DB
     features: v.optional(v.array(v.string()))
   })
     .index("by_key", ["key"])
     .index("by_stripePriceId", ["stripePriceId"])
+    .index("by_stripeProductId", ["stripeProductId"])
+
     .index("by_tier", ["tier"]), // Add tier index
 
   // Minimal table to hold subscriptions received externally (mapped by email)
@@ -185,6 +191,7 @@ export default defineSchema({
     email: v.string(),
     stripeSubscriptionId: v.string(),
     stripeCustomerId: v.optional(v.string()),
+    productId: v.optional(v.string()),
     priceId: v.optional(v.string()),
     status: v.optional(v.string()),
     currentPeriodEnd: v.optional(v.number()),
