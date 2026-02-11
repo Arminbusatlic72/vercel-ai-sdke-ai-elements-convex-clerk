@@ -190,11 +190,8 @@ export default function CheckoutForm() {
     <div className="max-w-7xl mx-auto px-4 py-12">
       <div className="text-center mb-12">
         <h1 className="text-4xl font-bold text-gray-900 mb-4">
-          Choose Your AI Sandbox Plan
+          StoryEngine Sandbox
         </h1>
-        <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-          Select from our range of professional and educational packages
-        </p>
       </div>
 
       <PackageGrid

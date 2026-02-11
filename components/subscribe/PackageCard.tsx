@@ -35,16 +35,16 @@ export default function PackageCard({
     <div
       className={`border rounded-xl p-6 cursor-pointer transition-all h-full flex flex-col ${
         isSelected
-          ? "border-blue-500 ring-2 ring-blue-200 bg-blue-50"
-          : "border-gray-200 hover:border-gray-300 hover:shadow-md"
-      } ${pkg.description ? "border-2 border-yellow-400" : ""}`}
+          ? "border-black-500 ring-2 ring-black-200 bg-black-50"
+          : "border-black-200 hover:border-gray-300 hover:shadow-md"
+      } ${pkg.description ? "border-2 border-black-400" : ""}`}
       onClick={onSelect}
     >
       {pkg.description && (
         <div className="mb-4">
-          <span className="inline-block bg-yellow-100 text-yellow-800 text-xs font-semibold px-3 py-1 rounded-full">
+          {/* <span className="inline-block bg-yellow-100 text-yellow-800 text-xs font-semibold px-3 py-1 rounded-full">
             POPULAR
-          </span>
+          </span> */}
         </div>
       )}
 
@@ -63,8 +63,8 @@ export default function PackageCard({
 
         <div className="mb-6">
           <div className="flex items-center mb-3">
-            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-              <span className="text-blue-600 font-bold">{pkg.maxGpts}</span>
+            <div className="w-8 h-8 bg-black-100 rounded-full flex items-center justify-center mr-3">
+              <span className="text-black-600 font-bold">{pkg.maxGpts}</span>
             </div>
             <span className="text-sm font-medium text-gray-700">
               {pkg.maxGpts} GPT{pkg.maxGpts !== 1 ? "s" : ""}

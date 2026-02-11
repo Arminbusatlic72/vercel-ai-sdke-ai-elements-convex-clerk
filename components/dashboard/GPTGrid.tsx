@@ -2,6 +2,7 @@
 
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import Link from "next/link";
 
 export default function GPTGrid() {
   const gpts = useQuery(api.gptAccess.getUserAccessibleGpts);
@@ -14,9 +15,10 @@ export default function GPTGrid() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {gpts.map((gpt: any) => (
-          <div
+          <Link
             key={gpt.gptId}
-            className="rounded-xl border p-4 hover:bg-muted transition"
+            href={`/gpt5/${gpt.gptId}`}
+            className="rounded-xl border p-4 hover:bg-muted transition block"
           >
             <h3 className="font-medium">{gpt.name ?? gpt.gptId}</h3>
 
@@ -25,7 +27,7 @@ export default function GPTGrid() {
                 {gpt.description}
               </p>
             )}
-          </div>
+          </Link>
         ))}
       </div>
     </div>

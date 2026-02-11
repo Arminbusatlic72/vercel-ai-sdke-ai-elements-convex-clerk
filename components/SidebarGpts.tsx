@@ -162,7 +162,9 @@ export default function SidebarGpts({
                     isSelected ? "bg-blue-500" : "bg-gray-300"
                   )}
                 />
-                <span className="truncate">{formatGptTitle(gpt.gptId)}</span>
+                <span className="truncate">
+                  {formatGptTitle(gpt.name ?? gpt.gptId)}
+                </span>
                 {isSelected && (
                   <div className="ml-auto w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
                 )}
