@@ -69,7 +69,7 @@ export default function Sidebar() {
   const globalChats = useQuery(api.chats.listChats, {}) ?? [];
 
   // Get all GPTs for admin, otherwise get subscription GPTs
-  const subscriptionGpts = useQuery(api.packages.getSubscriptionGpts) ?? [];
+  const subscriptionGpts = useQuery(api.gptAccess.getUserAccessibleGpts) ?? [];
   const allGpts = useQuery(api.gpts.listGpts) ?? [];
   const gpts = isAdmin ? allGpts : subscriptionGpts;
 

@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
 export default function GPTGrid() {
-  const gpts = useQuery(api.packages.getSubscriptionGpts);
+  const gpts = useQuery(api.gptAccess.getUserAccessibleGpts);
 
   if (!gpts?.length) return null;
 

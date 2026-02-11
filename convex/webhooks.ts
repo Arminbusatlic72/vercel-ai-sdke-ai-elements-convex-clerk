@@ -172,16 +172,51 @@ export const claimPendingSubscriptionByEmail = mutation({
   }
 });
 
-// Helper: Map product ID to plan type
+// Helper: Map product ID to plan type (productId is stable, priceId changes)
 function mapProductToPlanType(
   productId: string
 ): "sandbox" | "clientProject" | "basic" | "pro" {
   if (!productId) return "sandbox";
-  if (productId === process.env.STRIPE_PRODUCT_SDNA_CLIENT_PROJECT)
-    return "clientProject";
-  if (productId === process.env.STRIPE_PRODUCT_BASIC_ID) return "basic";
-  if (productId === process.env.STRIPE_PRODUCT_PRO_ID) return "pro";
-  return "sandbox";
+
+  const map: Record<string, "sandbox" | "clientProject" | "basic" | "pro"> = {
+    // Free/Sandbox products
+    [process.env.STRIPE_PRODUCT_CRISIS_SIMULATOR || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_CULTURE_MAPPING_TOOLKIT || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_DIAGNOSTIC_TOOLKIT || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_DIGITAL_FLANEUR_TOOLKIT || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_PACKAGING_ANALYSIS || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_REGIONAL_CODE_TOOLKIT || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_SPECULATIVE_FUTURES || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_SUBCULTURE_ANALYSIS || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_VISUALIZING_UNKNOWNS || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_LANGUAGE_MEANING_WORKSHOP || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_NARRATIVE_SYSTEMS || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_STRUCTURED_FORESIGHT || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_2026_TREND_THEME || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_ANALYZING_TRENDS || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_WORKSHOP_GPTS || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_RIKKYO_GPT || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_SUBSTACK_GPTS || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_SUMMER_SANDBOX || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_LINKEDIN_GPT || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_WORKSHOP_PRIMER || ""]: "sandbox",
+    [process.env.STRIPE_PRODUCT_SPACE_ANALYSIS_TOOLKIT || ""]: "sandbox",
+    // Paid products
+    [process.env.STRIPE_PRODUCT_SDNA_CLIENT_PROJECT || ""]: "clientProject",
+    [process.env.STRIPE_PRODUCT_BRAND_DECODER || ""]: "basic",
+    [process.env.STRIPE_PRODUCT_CONTRARIAN_TOOLKIT || ""]: "basic",
+    [process.env.STRIPE_PRODUCT_SDNA_STORYENGINE || ""]: "pro"
+  };
+
+  const planType = map[productId];
+  if (!planType) {
+    console.warn(
+      `⚠️ Unknown product ID "${productId}". Defaulting to "sandbox". Make sure the product ID is configured in environment variables.`
+    );
+    return "sandbox";
+  }
+
+  return planType;
 }
 
 // Helper: Map plan to max GPTs

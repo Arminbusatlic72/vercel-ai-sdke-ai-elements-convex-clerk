@@ -56,7 +56,7 @@ export default function ModelSelectorDropdown() {
   const isAdmin = userData?.role === "admin";
 
   // Get subscription GPTs (only shows GPTs from user's active subscription)
-  const subscriptionGpts = (useQuery(api.packages.getSubscriptionGpts) ||
+  const subscriptionGpts = (useQuery(api.gptAccess.getUserAccessibleGpts) ||
     []) as GPTConfig[];
 
   // Get all GPTs (for admin only)

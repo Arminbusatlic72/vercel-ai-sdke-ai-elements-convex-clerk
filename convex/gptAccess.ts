@@ -2,6 +2,40 @@
 
 import { v } from "convex/values";
 import { query } from "./_generated/server";
+import { Doc } from "./_generated/dataModel";
+
+/**
+ * HELPER: Find package by subscription (tries productId first, then priceId)
+ * Used by createChat and other mutations for consistency
+ * Returns the package doc or null if no match found
+ */
+export async function findPackageBySubscription(
+  ctx: any,
+  productId?: string,
+  priceId?: string
+): Promise<Doc<"packages"> | null> {
+  // Try productId first (preferred, more stable)
+  if (productId) {
+    const pkg = await ctx.db
+      .query("packages")
+      .withIndex("by_stripeProductId", (q: any) =>
+        q.eq("stripeProductId", productId)
+      )
+      .unique();
+    if (pkg) return pkg;
+  }
+
+  // Fall back to priceId for backward compatibility (older subscriptions)
+  if (priceId) {
+    const pkg = await ctx.db
+      .query("packages")
+      .withIndex("by_stripePriceId", (q: any) => q.eq("stripePriceId", priceId))
+      .unique();
+    if (pkg) return pkg;
+  }
+
+  return null;
+}
 
 /**
  * Get all GPTs available to a user based on their subscription
@@ -270,5 +304,62 @@ export const getSubscriptionSummary = query({
           )
         : null
     };
+  }
+});
+
+/**
+ * Return GPTs the current user is allowed to access.
+ * - Admins get all GPTs
+ * - Otherwise: must have active subscription, package matched by productId or priceId
+ */
+export const getUserAccessibleGpts = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) return [];
+
+    // Admin sees everything
+    if (user.role === "admin") {
+      return await ctx.db.query("gpts").collect();
+    }
+
+    const subscription = user.subscription;
+    if (!subscription) return [];
+
+    if (subscription.status !== "active") return [];
+
+    // Find package by productId first, then fallback to priceId
+    let pkg = null as any;
+    if (subscription.productId) {
+      pkg = await ctx.db
+        .query("packages")
+        .withIndex("by_stripeProductId", (q) =>
+          q.eq("stripeProductId", subscription.productId as string)
+        )
+        .unique();
+    }
+
+    if (!pkg && subscription.priceId) {
+      pkg = await ctx.db
+        .query("packages")
+        .withIndex("by_stripePriceId", (q) =>
+          q.eq("stripePriceId", subscription.priceId as string)
+        )
+        .unique();
+    }
+
+    if (!pkg) return [];
+
+    return await ctx.db
+      .query("gpts")
+      .withIndex("by_packageId", (q) => q.eq("packageId", pkg._id))
+      .collect();
   }
 });

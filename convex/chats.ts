@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { findPackageBySubscription } from "./gptAccess";
 
 import { Id } from "./_generated/dataModel";
 
@@ -33,34 +34,31 @@ export const createChat = mutation({
       });
     }
 
-    // 3️⃣ If user has no subscription, block
-    const subscription = user.subscription;
-    if (!subscription) {
-      throw new Error(
-        "No subscription found. Please subscribe to access GPTs."
-      );
-    }
-
-    // Only allow active subscriptions
-    if (subscription.status !== "active") {
-      throw new Error(`Subscription is ${subscription.status}, not active`);
-    }
-
-    // 4️⃣ If gptId is provided, ensure it is allowed
+    // 3️⃣ Only require a subscription when a GPT is requested
     if (gptId) {
-      // Find the package that matches this subscription's priceId
-      const matchedPackage = await ctx.db
-        .query("packages")
-        .withIndex("by_stripeProductId", (q) =>
-          q.eq("stripeProductId", subscription.productId ?? "")
-        )
-        .unique();
+      const subscription = user.subscription;
+      if (!subscription) {
+        throw new Error(
+          "No subscription found. Please subscribe to access GPTs."
+        );
+      }
+
+      // Only allow active subscriptions for GPT access
+      if (subscription.status !== "active") {
+        throw new Error(`Subscription is ${subscription.status}, not active`);
+      }
+
+      // 4️⃣ Use helper to find package (tries productId, falls back to priceId)
+      const matchedPackage = await findPackageBySubscription(
+        ctx,
+        subscription.productId,
+        subscription.priceId
+      );
 
       if (!matchedPackage) {
         throw new Error("Your subscription package was not found.");
       }
 
-      // Check if this GPT belongs to the user's package
       const gpt = await ctx.db
         .query("gpts")
         .withIndex("by_packageId", (q) => q.eq("packageId", matchedPackage._id))

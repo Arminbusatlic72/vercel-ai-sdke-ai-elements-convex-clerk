@@ -846,10 +846,10 @@ export const getSubscriptionGpts = query({
       return [];
     }
 
-    // Step 3: Check for active subscription with productId
+    // Step 3: Check for active subscription
     const subscription = user.subscription;
-    if (!subscription || !subscription.productId) {
-      console.log("❌ User has no active subscription");
+    if (!subscription) {
+      console.log("❌ User has no subscription");
       return [];
     }
 
@@ -861,28 +861,41 @@ export const getSubscriptionGpts = query({
       return [];
     }
 
-    console.log(
-      `✅ User has active subscription with productId: ${subscription.productId}`
-    );
+    // Step 4: Find the package matching productId or priceId
+    let matchedPackage = null;
 
-    // Step 4: Find the package that matches this productId
-    const matchedPackage = await ctx.db
-      .query("packages")
-      .withIndex("by_stripeProductId", (q) =>
-        q.eq("stripeProductId", subscription.productId!)
-      )
-      .unique();
+    // Try productId first (preferred)
+    if (subscription.productId) {
+      console.log(
+        `✅ User has active subscription with productId: ${subscription.productId}`
+      );
+      matchedPackage = await ctx.db
+        .query("packages")
+        .withIndex("by_stripeProductId", (q) =>
+          q.eq("stripeProductId", subscription.productId!)
+        )
+        .unique();
+    }
+
+    // Fall back to priceId for older subscriptions
+    if (!matchedPackage && subscription.priceId) {
+      console.log(
+        `⚠️ No productId found, falling back to priceId: ${subscription.priceId}`
+      );
+      matchedPackage = await ctx.db
+        .query("packages")
+        .withIndex("by_stripePriceId", (q) =>
+          q.eq("stripePriceId", subscription.priceId!)
+        )
+        .unique();
+    }
 
     if (!matchedPackage) {
       console.log(
-        `❌ No package found for productId: ${subscription.productId}`
+        `❌ No package found for productId: ${subscription.productId} or priceId: ${subscription.priceId}`
       );
       return [];
     }
-
-    console.log(
-      `✅ Found package: ${matchedPackage.name} (${matchedPackage._id})`
-    );
 
     // Step 5: Get all GPTs that belong to this package
     const gpts = await ctx.db

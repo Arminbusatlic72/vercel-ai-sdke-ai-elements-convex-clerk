@@ -32,7 +32,7 @@ export function GptSelector() {
   const [selectedGptId, setSelectedGptId] = useState<string | null>(null);
 
   // Query returns GPTs from user's subscription package (or empty if no subscription)
-  const subscriptionGpts = useQuery(api.packages.getSubscriptionGpts) as
+  const subscriptionGpts = useQuery(api.gptAccess.getUserAccessibleGpts) as
     | Gpt[]
     | undefined;
 
@@ -95,7 +95,9 @@ export function GptSelector() {
  * Alternative: Hook for using GPTs in other components
  */
 export function useSubscriptionGpts() {
-  const gpts = useQuery(api.packages.getSubscriptionGpts) as Gpt[] | undefined;
+  const gpts = useQuery(api.gptAccess.getUserAccessibleGpts) as
+    | Gpt[]
+    | undefined;
 
   return {
     gpts: gpts || [],
