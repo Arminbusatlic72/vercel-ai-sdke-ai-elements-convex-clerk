@@ -16,18 +16,20 @@ export const syncSubscriptionFromStripe = mutation({
       v.literal("unpaid"),
       v.literal("paused")
     ),
-    productId: v.string(),
+    productId: v.optional(v.string()),
     priceId: v.optional(v.string()),
-    planType: v.union(
-      v.literal("sandbox"),
-      v.literal("clientProject"),
-      v.literal("basic"),
-      v.literal("pro")
+    planType: v.optional(
+      v.union(
+        v.literal("sandbox"),
+        v.literal("clientProject"),
+        v.literal("basic"),
+        v.literal("pro")
+      )
     ),
     currentPeriodStart: v.number(),
     currentPeriodEnd: v.number(),
     cancelAtPeriodEnd: v.boolean(),
-    maxGpts: v.number(),
+    maxGpts: v.optional(v.number()),
     // ✅ NEW: Optional fields for enhanced tracking
     trialEndDate: v.optional(v.number()),
     paymentFailureGracePeriodEnd: v.optional(v.number()),
@@ -72,12 +74,79 @@ export const syncSubscriptionFromStripe = mutation({
     // CRITICAL: Preserve existing gptIds during sync (only reset on true cancellation)
     const existingGptIds = user.subscription?.gptIds || [];
 
+    // Compute planType and maxGpts server-side when not provided
+    let planType = args.planType as
+      | "sandbox"
+      | "clientProject"
+      | "basic"
+      | "pro"
+      | undefined;
+    let maxGpts = args.maxGpts;
+
+    if (!planType) {
+      // Try to find package by productId then priceId
+      let pkg: any = null;
+      if (args.productId) {
+        pkg = await ctx.db
+          .query("packages")
+          .withIndex("by_stripeProductId", (q) =>
+            q.eq("stripeProductId", args.productId!)
+          )
+          .unique();
+      }
+      if (!pkg && args.priceId) {
+        pkg = await ctx.db
+          .query("packages")
+          .withIndex("by_stripePriceId", (q) =>
+            q.eq("stripePriceId", args.priceId!)
+          )
+          .unique();
+      }
+
+      if (pkg) {
+        try {
+          planType = mapPackageToPlan(pkg.key);
+        } catch (e) {
+          planType = "sandbox";
+        }
+        if (maxGpts === undefined) {
+          maxGpts =
+            pkg.maxGpts ??
+            (planType === "sandbox"
+              ? 12
+              : planType === "clientProject"
+                ? 1
+                : planType === "basic"
+                  ? 3
+                  : 6);
+        }
+      } else {
+        // Fallback defaults
+        planType = planType || "sandbox";
+        if (maxGpts === undefined) {
+          maxGpts =
+            planType === "sandbox"
+              ? 12
+              : planType === "clientProject"
+                ? 1
+                : planType === "basic"
+                  ? 3
+                  : 6;
+        }
+      }
+    }
+
+    // If subscription is canceled, force zero access
+    if (args.status === "canceled") {
+      maxGpts = 0;
+    }
+
     await ctx.db.patch(user._id, {
       stripeCustomerId: args.stripeCustomerId,
       subscription: {
         status: args.status,
         stripeSubscriptionId: args.stripeSubscriptionId,
-        plan: args.planType,
+        plan: planType,
         productId: args.productId,
         priceId: args.priceId,
         currentPeriodStart: args.currentPeriodStart,
@@ -90,7 +159,7 @@ export const syncSubscriptionFromStripe = mutation({
           args.status === "canceled"
             ? args.canceledAt || Date.now()
             : undefined,
-        maxGpts: args.maxGpts,
+        maxGpts: maxGpts!,
         // Only reset gptIds if subscription truly canceled (not on schedule-for-cancellation)
         gptIds: args.status === "canceled" ? [] : existingGptIds
       },
@@ -115,8 +184,9 @@ export const syncSubscriptionFromStripe = mutation({
         status: args.status,
         currentPeriodEnd: args.currentPeriodEnd,
         cancelAtPeriodEnd: args.cancelAtPeriodEnd,
-        planType: args.planType,
-        productId: args.productId
+        planType,
+        productId: args.productId,
+        priceId: args.priceId
       });
     } else {
       await ctx.db.insert("subscriptions", {
@@ -126,8 +196,8 @@ export const syncSubscriptionFromStripe = mutation({
         stripeCustomerId: args.stripeCustomerId,
         status: args.status,
         productId: args.productId,
-        priceId: args.priceId!,
-        planType: args.planType,
+        priceId: args.priceId || "",
+        planType,
         currentPeriodStart: args.currentPeriodStart,
         currentPeriodEnd: args.currentPeriodEnd,
         cancelAtPeriodEnd: args.cancelAtPeriodEnd,

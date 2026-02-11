@@ -193,8 +193,6 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
     return { success: false };
   }
 
-  const packageKey = getPricePackageMapping(priceId);
-
   // 🔴 CRITICAL: Only sync subscription state. DO NOT downgrade user on cancel_at_period_end.
   // User keeps FULL access until billing period actually ends.
   // Only downgrade when webhook is customer.subscription.deleted (true cancellation).
@@ -224,14 +222,6 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
   }
 
   // 🔴 Map correct maxGpts per plan type
-  const maxGptsPerPlan: Record<string, number> = {
-    sandbox: 12,
-    clientProject: 1,
-    basic: 3,
-    pro: 6
-  };
-  const maxGpts = maxGptsPerPlan[packageKey] || 1;
-
   await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
     clerkUserId,
     stripeSubscriptionId: subscription.id,
@@ -239,11 +229,9 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
     status: subscription.status,
     productId,
     priceId,
-    planType: packageKey,
     currentPeriodStart: subscription.items.data[0].current_period_start * 1000,
     currentPeriodEnd: subscription.items.data[0].current_period_end * 1000,
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
-    maxGpts,
     // ✅ NEW: Pass trial and payment tracking fields
     trialEndDate,
     paymentFailureGracePeriodEnd: undefined, // Only set by payment_failed handler
@@ -316,15 +304,6 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
       let downgradePackageKey: "sandbox" | "clientProject" | "basic" | "pro" =
         "sandbox"; // Default to free
 
-      // Attempt to map original price for audit trail
-      if (priceId) {
-        try {
-          downgradePackageKey = getPricePackageMapping(priceId);
-        } catch (e) {
-          downgradePackageKey = "sandbox"; // Safe fallback
-        }
-      }
-
       console.log(
         `🔴 Subscription ${subscription.id} deleted—downgrading user ${clerkUserId} to free plan`
       );
@@ -336,7 +315,6 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
         status: "canceled", // Actually canceled, not scheduled
         priceId: subscription.items.data[0]?.price.id || "",
         productId: subscription.items.data[0]?.price.product as string,
-        planType: downgradePackageKey,
         currentPeriodStart:
           subscription.items.data[0]?.current_period_start * 1000 || Date.now(),
         currentPeriodEnd:
@@ -457,16 +435,6 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
     }
 
     const priceId = subscription.items.data[0]?.price.id || "";
-    const packageKey = getPricePackageMapping(priceId);
-
-    // 🔴 Map correct maxGpts per plan type (not hardcoded pro/other)
-    const maxGptsPerPlan: Record<string, number> = {
-      sandbox: 12,
-      clientProject: 1,
-      basic: 3,
-      pro: 6
-    };
-    const maxGpts = maxGptsPerPlan[packageKey] || 1;
 
     // ✅ NEW: Implement 7-day grace period
     // User enters past_due state but retains full access for 7 days to recover payment
@@ -484,7 +452,6 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
       status: "past_due",
       priceId,
       productId: subscription.items.data[0]?.price.product as string,
-      planType: packageKey,
       currentPeriodStart: subscription.items.data[0].current_period_start
         ? subscription.items.data[0].current_period_start * 1000
         : Date.now(),
@@ -492,7 +459,6 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
         ? subscription.items.data[0].current_period_end * 1000
         : Date.now() + 30 * 24 * 60 * 60 * 1000,
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      maxGpts,
       // ✅ NEW: Pass grace period tracking fields
       trialEndDate: undefined, // Not a trial period
       lastPaymentFailedAt: Date.now(),
