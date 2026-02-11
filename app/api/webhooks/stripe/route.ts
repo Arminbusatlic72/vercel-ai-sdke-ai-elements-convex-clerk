@@ -11,7 +11,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 // ✅ STEP 1: Verify Stripe Signature
 async function verifyStripeSignature(
-  body: string,
+  body: Buffer,
   signature: string
 ): Promise<Stripe.Event> {
   try {
@@ -27,7 +27,7 @@ async function verifyStripeSignature(
 
 // ✅ STEP 2: Route Handler with Idempotency
 export async function POST(request: Request) {
-  const body = await request.text();
+  const body = Buffer.from(await request.arrayBuffer());
   const headersList = await headers();
   const signature = headersList.get("stripe-signature")!;
 
