@@ -43,11 +43,11 @@ export const getUserSubscription = query({
 
     // Get package name from packages table using stripePriceId
     let packageName = subscription?.plan ?? "none";
-    if (subscription?.priceId) {
+    if (subscription?.productId) {
       const pkg = await ctx.db
         .query("packages")
-        .withIndex("by_stripePriceId", (q) =>
-          q.eq("stripePriceId", subscription.priceId!)
+        .withIndex("by_stripeProductId", (q) =>
+          q.eq("stripeProductId", subscription.productId!)
         )
         .first();
 
@@ -176,8 +176,24 @@ async function claimPendingSubscription(
     if (!user) return;
 
     // Map price to plan type
-    const planType = mapPriceToPlanType(pending.priceId || "");
-    const maxGpts = mapPlanToMaxGpts(planType);
+    // const planType = mapProductToPlanType(pending.productId || "");
+    // const maxGpts = mapPlanToMaxGpts(planType)
+    // ;
+
+    const pkg = await ctx.db
+      .query("packages")
+      .withIndex("by_stripeProductId", (q: any) =>
+        q.eq("stripeProductId", pending.productId)
+      )
+      .unique();
+
+    if (!pkg) {
+      console.warn(`No package for productId ${pending.productId}`);
+      return;
+    }
+
+    const planType = pkg.name;
+    const maxGpts = pkg.maxGpts;
 
     // Attach subscription to user
     await ctx.db.patch(user._id, {
@@ -186,6 +202,7 @@ async function claimPendingSubscription(
         status: (pending.status || "active") as any,
         stripeSubscriptionId: pending.stripeSubscriptionId,
         plan: planType,
+        productId: pending.productId,
         priceId: pending.priceId || "",
         currentPeriodStart: Date.now(),
         currentPeriodEnd:
@@ -207,14 +224,26 @@ async function claimPendingSubscription(
 }
 
 // Helper: Map price ID to plan type
-function mapPriceToPlanType(
-  priceId: string
+// function mapPriceToPlanType(
+//   priceId: string
+// ): "sandbox" | "clientProject" | "basic" | "pro" {
+//   if (!priceId) return "sandbox";
+//   if (priceId === process.env.STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY)
+//     return "clientProject";
+//   if (priceId === process.env.STRIPE_PRICE_BASIC_ID) return "basic";
+//   if (priceId === process.env.STRIPE_PRICE_PRO_ID) return "pro";
+//   return "sandbox";
+// }
+function mapProductToPlanType(
+  productId: string
 ): "sandbox" | "clientProject" | "basic" | "pro" {
-  if (!priceId) return "sandbox";
-  if (priceId === process.env.STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY)
+  if (!productId) return "sandbox";
+
+  if (productId === process.env.STRIPE_PRODUCT_CLIENT_PROJECT)
     return "clientProject";
-  if (priceId === process.env.STRIPE_PRICE_BASIC_ID) return "basic";
-  if (priceId === process.env.STRIPE_PRICE_PRO_ID) return "pro";
+  if (productId === process.env.STRIPE_PRODUCT_BASIC) return "basic";
+  if (productId === process.env.STRIPE_PRODUCT_PRO) return "pro";
+
   return "sandbox";
 }
 
@@ -255,6 +284,7 @@ export const updateSubscription = mutation({
         v.literal("clientProject")
       ),
       priceId: v.string(),
+      productId: v.string(),
       productName: v.optional(v.string()),
       currentPeriodEnd: v.number(),
       cancelAtPeriodEnd: v.optional(v.boolean()),
@@ -368,6 +398,7 @@ export const updateSubscriptionInternal = internalMutation({
         v.literal("clientProject")
       ),
       priceId: v.string(),
+      productId: v.string(),
       currentPeriodEnd: v.number(),
       cancelAtPeriodEnd: v.optional(v.boolean()),
       maxGpts: v.number(),
@@ -765,6 +796,7 @@ export const updateUserSubscription = mutation({
         v.literal("pro")
       ),
       priceId: v.string(),
+      productId: v.string(),
       currentPeriodEnd: v.number(),
       cancelAtPeriodEnd: v.boolean(),
       maxGpts: v.number(),
