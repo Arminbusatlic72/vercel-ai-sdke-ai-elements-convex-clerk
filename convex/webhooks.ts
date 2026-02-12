@@ -112,6 +112,21 @@ export const savePendingSubscriptionByEmail = mutation({
 });
 
 /**
+ * Fetch pending subscription by email (called by Clerk webhook)
+ */
+export const getPendingSubscriptionByEmail = query({
+  args: {
+    email: v.string()
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("pendingSubscriptions")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+  }
+});
+
+/**
  * Claim pending subscription: when user signs up with email,
  * attach any pending subscription from Squarespace purchase
  */

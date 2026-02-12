@@ -73,7 +73,6 @@ export async function POST(request: Request) {
 // ✅ STEP 3: Event Router
 async function handleStripeEvent(event: Stripe.Event) {
   switch (event.type) {
-    // ✅ New: Checkout completion (new subscription)
     case "checkout.session.completed":
       return await handleCheckoutSessionCompleted(
         event.data.object as Stripe.Checkout.Session
@@ -95,71 +94,135 @@ async function handleStripeEvent(event: Stripe.Event) {
         event.data.object as Stripe.Invoice
       );
 
-    case "invoice.payment_succeeded":
-      return await handleInvoicePaymentSucceeded(
-        event.data.object as Stripe.Invoice
-      );
-
     case "invoice.payment_failed":
       return await handleInvoicePaymentFailed(
         event.data.object as Stripe.Invoice
       );
 
     default:
-      console.log(`Unhandled event: ${event.type}`);
+      console.log(`ℹ️ Unhandled event: ${event.type}`);
       return { success: true };
   }
 }
 
-// In app/api/webhooks/stripe/route.ts
+// ============================================================================
+// SHARED HELPERS
+// ============================================================================
 
-async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
-  const customerId = subscription.customer as string;
-  const priceId = subscription.items.data[0]?.price.id;
-  const productId = subscription.items.data[0]?.price.product as string;
+/**
+ * Backfill Stripe customer metadata if missing.
+ * Helps with Squarespace purchases that don't include metadata at creation.
+ */
+async function backfillStripeCustomerMetadata(
+  customerId: string,
+  email?: string,
+  name?: string
+): Promise<void> {
+  try {
+    const customer = await stripe.customers.retrieve(customerId);
+    if ("deleted" in customer && customer.deleted) {
+      return; // Customer is deleted, skip
+    }
 
+    const stripeCustomer = customer as Stripe.Customer;
+    const existingMetadata = stripeCustomer.metadata || {};
+
+    // Only update if email or name is missing and we have values to add
+    if (
+      (!existingMetadata.email && email) ||
+      (!existingMetadata.name && name)
+    ) {
+      const updatedMetadata = {
+        ...existingMetadata,
+        ...(email && !existingMetadata.email && { email }),
+        ...(name && !existingMetadata.name && { name }),
+        ...(email && !existingMetadata.source && { source: "squarespace" })
+      };
+
+      await stripe.customers.update(customerId, { metadata: updatedMetadata });
+      console.log(
+        `  → Backfilled Stripe customer metadata: email=${email || "N/A"}, name=${name || "N/A"}`
+      );
+    }
+  } catch (err) {
+    console.warn(`  ⚠️ Failed to backfill customer metadata:`, err);
+    // Don't throw — this is best-effort
+  }
+}
+
+/**
+ * Resolve clerkUserId using fallback chain:
+ * 1. subscription.metadata.clerkUserId
+ * 2. Convex lookup by stripeCustomerId
+ * 3. Stripe customer metadata
+ * 4. Save as pendingSubscription by email (external purchase)
+ *
+ * Returns clerkUserId if found, or null if saved as pending.
+ */
+async function resolveClerkUserId(
+  subscription: Stripe.Subscription,
+  customerId: string
+): Promise<string | null> {
   let clerkUserId = subscription.metadata?.clerkUserId;
 
-  // Fallback 1: Look up by Stripe customer ID
+  // Fallback 1: Query Convex by stripeCustomerId
   if (!clerkUserId) {
     try {
       const users = await convex.query(api.users.getByStripeCustomerId, {
         stripeCustomerId: customerId
       });
       clerkUserId = users?.[0]?.clerkId;
-    } catch (e) {
-      // Fallback 2: Check Stripe customer metadata
-      try {
-        const customer = await stripe.customers.retrieve(customerId);
-        if (!("deleted" in customer) || !customer.deleted) {
-          clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
-        }
-      } catch (err) {
-        console.warn("Could not retrieve Stripe customer metadata:", err);
+      if (clerkUserId) {
+        console.log(
+          `  → Resolved clerkUserId via Convex lookup: ${clerkUserId}`
+        );
       }
+    } catch (e) {
+      console.warn(`  ⚠️ Convex lookup failed:`, e);
     }
   }
 
+  // Fallback 2: Check Stripe customer metadata
   if (!clerkUserId) {
-    // ✅ NEW: No clerkUserId found — this is an external purchase (e.g., Squarespace)
-    // Save as pending subscription keyed by email for later claiming
-    console.log(
-      `ℹ️ No clerkUserId found for subscription ${subscription.id} — treating as external purchase`
-    );
+    try {
+      const customer = await stripe.customers.retrieve(customerId);
+      if (!("deleted" in customer) || !customer.deleted) {
+        clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
+        if (clerkUserId) {
+          console.log(
+            `  → Resolved clerkUserId via Stripe metadata: ${clerkUserId}`
+          );
+        }
+      }
+    } catch (err) {
+      console.warn(`  ⚠️ Stripe customer lookup failed:`, err);
+    }
+  }
 
+  // Fallback 3: External purchase — save as pending
+  if (!clerkUserId) {
+    const priceId = subscription.items.data[0]?.price.id;
+    const productId = subscription.items.data[0]?.price.product as string;
     const email =
       subscription.metadata?.email || (await getCustomerEmail(customerId));
+    const name = subscription.metadata?.name;
 
-    if (!email) {
-      console.warn(
-        `⚠️ No email found for external subscription — saving with empty email as placeholder`
+    console.log(
+      `  → No clerkUserId found — treating as external purchase (email: ${email || "N/A"})`
+    );
+
+    // Attempt to backfill Stripe customer metadata for future events
+    if (email || name) {
+      await backfillStripeCustomerMetadata(
+        customerId,
+        email || undefined,
+        name || undefined
       );
     }
 
-    // Save pending subscription (use email if available, otherwise use empty string as placeholder)
     try {
       await convex.mutation(api.webhooks.savePendingSubscriptionByEmail, {
-        email: email ?? "", // Ensure it's always a string, never null
+        email: email ?? "",
         stripeSubscriptionId: subscription.id,
         stripeCustomerId: customerId,
         productId,
@@ -169,389 +232,246 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
           ? subscription.items.data[0].current_period_end * 1000
           : undefined
       });
-
       console.log(
-        `✅ Saved pending subscription for external purchase (customerId: ${customerId}, email: ${email || "N/A"})`
+        `  ✅ Saved as pending subscription for later claim (email: ${email || "unknown"})`
       );
-
-      return { success: true };
     } catch (error) {
-      console.error(`❌ Failed to save pending subscription: ${error}`);
-      return { success: false };
+      console.error(`  ❌ Failed to save pending subscription:`, error);
+      throw error;
     }
+    return null; // External purchase saved; stop processing
   }
 
-  // ✨ NEW: Auto-create user if not found (fixes race condition)
+  // Auto-create user if not found
   try {
     await convex.mutation(api.users.getOrCreateUserFromWebhook, {
       clerkId: clerkUserId,
       email: subscription.metadata?.email,
       name: subscription.metadata?.name
     });
+    console.log(`  ✅ User ensured/created: ${clerkUserId}`);
   } catch (error) {
-    console.error(`❌ Failed to ensure user exists for webhook: ${error}`);
-    return { success: false };
+    console.error(`  ❌ Failed to ensure user exists:`, error);
+    throw error;
   }
 
-  // 🔴 CRITICAL: Only sync subscription state. DO NOT downgrade user on cancel_at_period_end.
-  // User keeps FULL access until billing period actually ends.
-  // Only downgrade when webhook is customer.subscription.deleted (true cancellation).
+  return clerkUserId;
+}
 
-  if (subscription.cancel_at_period_end) {
+/**
+ * Core subscription sync called by all handlers.
+ * Passes productId + priceId; server computes planType + maxGpts.
+ */
+async function syncAllSubscriptionUpdates(
+  clerkUserId: string,
+  subscription: Stripe.Subscription,
+  overrides?: {
+    status?: string;
+    trialEndDate?: number;
+    lastPaymentFailedAt?: number;
+    paymentFailureGracePeriodEnd?: number;
+    maxGpts?: number;
+    canceledAt?: number;
+  }
+): Promise<void> {
+  const customerId = subscription.customer as string;
+  const priceId = subscription.items.data[0]?.price.id;
+  const productId = subscription.items.data[0]?.price.product as string;
+
+  const statusValue = overrides?.status || subscription.status;
+  const status = statusValue as
+    | "active"
+    | "canceled"
+    | "past_due"
+    | "trialing"
+    | "incomplete"
+    | "incomplete_expired"
+    | "unpaid"
+    | "paused";
+
+  console.log(`  → Syncing subscription: status=${status}`);
+
+  if (subscription.cancel_at_period_end && status === "active") {
     console.log(
-      `⚠️ Subscription ${subscription.id} scheduled for cancellation at period end`
-    );
-    console.log(
-      `   User retains full access until: ${new Date(subscription.items.data[0].current_period_end * 1000).toISOString()}`
+      `    ⚠️ cancel_at_period_end=true (user retains access until period end)`
     );
   }
 
-  if (!subscription.cancel_at_period_end && subscription.status === "active") {
-    console.log(
-      `✅ Subscription ${subscription.id} reactivated (auto-renew enabled)`
-    );
+  if (subscription.trial_end && subscription.status === "trialing") {
+    const trialEndDate = subscription.trial_end * 1000;
+    console.log(`    📅 Trial ends: ${new Date(trialEndDate).toISOString()}`);
   }
 
-  // ✅ NEW: Track trial period end if subscription is trialing
-  let trialEndDate: number | undefined;
-  if (subscription.status === "trialing" && subscription.trial_end) {
-    trialEndDate = subscription.trial_end * 1000; // Convert to milliseconds
-    console.log(
-      `📅 Trial period ends: ${new Date(trialEndDate).toISOString()}`
-    );
-  }
-
-  // 🔴 Map correct maxGpts per plan type
   await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
     clerkUserId,
     stripeSubscriptionId: subscription.id,
     stripeCustomerId: customerId,
-    status: subscription.status,
+    status,
     productId,
     priceId,
     currentPeriodStart: subscription.items.data[0].current_period_start * 1000,
     currentPeriodEnd: subscription.items.data[0].current_period_end * 1000,
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
-    // ✅ NEW: Pass trial and payment tracking fields
-    trialEndDate,
-    paymentFailureGracePeriodEnd: undefined, // Only set by payment_failed handler
-    lastPaymentFailedAt: undefined // Only set by payment_failed handler
+    // Override fields (only set if provided)
+    trialEndDate: overrides?.trialEndDate,
+    lastPaymentFailedAt: overrides?.lastPaymentFailedAt,
+    paymentFailureGracePeriodEnd: overrides?.paymentFailureGracePeriodEnd,
+    maxGpts: overrides?.maxGpts,
+    canceledAt: overrides?.canceledAt
   });
 
-  console.log(
-    `✅ Subscription ${subscription.id} synced with cancelAtPeriodEnd: ${subscription.cancel_at_period_end}`
-  );
+  console.log(`  ✅ Subscription synced`);
+}
+
+// ============================================================================
+// EVENT HANDLERS
+// ============================================================================
+
+async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
+  console.log(`📝 handleSubscriptionUpdate: ${subscription.id}`);
+
+  const customerId = subscription.customer as string;
+  const clerkUserId = await resolveClerkUserId(subscription, customerId);
+
+  if (clerkUserId === null) {
+    // External purchase saved as pending; stop here
+    return { success: true };
+  }
+
+  await syncAllSubscriptionUpdates(clerkUserId, subscription);
 
   return { success: true };
 }
 
 // Handle subscription deletion
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
-  console.log(`🗑️ Handling subscription deletion: ${subscription.id}`);
+  console.log(`🗑️ handleSubscriptionDeleted: ${subscription.id}`);
 
-  try {
-    const customerId = subscription.customer as string;
-    let clerkUserId = subscription.metadata?.clerkUserId;
+  const customerId = subscription.customer as string;
+  const clerkUserId = await resolveClerkUserId(subscription, customerId);
 
-    // Fallback 1: Look up by stripeCustomerId in Convex
-    if (!clerkUserId) {
-      try {
-        const users = await convex.query(api.users.getByStripeCustomerId, {
-          stripeCustomerId: customerId
-        });
-
-        if (users && users.length > 0) {
-          clerkUserId = users[0].clerkId;
-        } else {
-          // Fallback 2: Check Stripe customer metadata
-          const customer = await stripe.customers.retrieve(customerId);
-
-          // Check if customer is deleted before accessing metadata
-          if (!("deleted" in customer) || !customer.deleted) {
-            clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
-          }
-        }
-      } catch (err) {
-        console.warn("Could not lookup user by Stripe customer:", err);
-      }
-    }
-
-    if (!clerkUserId) {
-      console.warn(
-        `⚠️ Cannot find clerkUserId for deleted subscription ${subscription.id}. Skipping.`
-      );
-      return { success: true }; // Return success to prevent retry
-    }
-
-    // ✨ NEW: Ensure user exists (in case it was deleted from DB)
-    try {
-      await convex.mutation(api.users.getOrCreateUserFromWebhook, {
-        clerkId: clerkUserId
-      });
-    } catch (error) {
-      console.error(
-        `⚠️ Could not auto-create user for subscription deletion: ${error}`
-      );
-    }
-
-    const user = await convex.query(api.users.getUserByClerkId, {
-      clerkId: clerkUserId
-    });
-
-    if (user) {
-      // 🔴 CRITICAL: Subscription truly deleted—downgrade user to free plan NOW
-      const priceId = subscription.items.data[0]?.price.id;
-      let downgradePackageKey: "sandbox" | "clientProject" | "basic" | "pro" =
-        "sandbox"; // Default to free
-
-      console.log(
-        `🔴 Subscription ${subscription.id} deleted—downgrading user ${clerkUserId} to free plan`
-      );
-
-      await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
-        clerkUserId,
-        stripeSubscriptionId: subscription.id,
-        stripeCustomerId: customerId,
-        status: "canceled", // Actually canceled, not scheduled
-        priceId: subscription.items.data[0]?.price.id || "",
-        productId: subscription.items.data[0]?.price.product as string,
-        currentPeriodStart:
-          subscription.items.data[0]?.current_period_start * 1000 || Date.now(),
-        currentPeriodEnd:
-          subscription.items.data[0]?.current_period_end * 1000 || Date.now(),
-        cancelAtPeriodEnd: false,
-        maxGpts: 0, // No GPTs after cancellation
-        // ✅ NEW: Clear trial and grace period tracking on true cancellation
-        trialEndDate: undefined,
-        lastPaymentFailedAt: undefined,
-        paymentFailureGracePeriodEnd: undefined,
-        canceledAt: Date.now()
-      });
-    } else {
-      console.warn(`User ${clerkUserId} not found after deletion attempt`);
-    }
-
-    console.log(`✅ Subscription ${subscription.id} marked as deleted`);
+  if (clerkUserId === null) {
+    // External purchase pending; no user to downgrade
+    console.log(`  ℹ️ External purchase (pending) — no user to downgrade`);
     return { success: true };
-  } catch (error) {
-    console.error(`❌ Subscription deletion failed:`, error);
-    return { success: false };
   }
+
+  // True cancellation: downgrade user, clear gptIds, maxGpts=0
+  await syncAllSubscriptionUpdates(clerkUserId, subscription, {
+    status: "canceled",
+    maxGpts: 0,
+    canceledAt: Date.now()
+  });
+
+  console.log(`  🔴 User downgraded to free plan`);
+  return { success: true };
 }
 
 async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
-  console.log(`💰 Invoice payment succeeded: ${invoice.id}`);
+  console.log(`💰 handleInvoicePaymentSucceeded: ${invoice.id}`);
 
-  // ✅ New Path for 2025 API versions
-  let subscriptionId = (invoice as any).parent?.subscription_details
-    ?.subscription as string | null;
-
-  // ✅ Fallback for other versions
-  if (!subscriptionId) {
-    subscriptionId = (invoice as any).subscription as string | null;
-  }
-
-  // ✅ Deep Fallback to line items
-  if (!subscriptionId) {
-    subscriptionId =
-      (invoice.lines?.data.find((l) => l.subscription)
-        ?.subscription as string) || null;
-  }
+  // Extract subscription ID (multiple paths for different API versions)
+  let subscriptionId =
+    ((invoice as any).parent?.subscription_details?.subscription as string) ||
+    ((invoice as any).subscription as string) ||
+    (invoice.lines?.data.find((l) => l.subscription)?.subscription as string);
 
   if (!subscriptionId) {
-    console.log("⏭️ Truly no subscription found, skipping...");
+    console.log(`  ℹ️ No subscription found on invoice — skipping`);
     return { success: true };
   }
 
+  console.log(`  → Fetching subscription: ${subscriptionId}`);
+
   try {
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    return await handleSubscriptionUpdate(subscription);
+    const customerId = subscription.customer as string;
+    const clerkUserId = await resolveClerkUserId(subscription, customerId);
+
+    if (clerkUserId === null) {
+      return { success: true }; // External purchase saved as pending
+    }
+
+    await syncAllSubscriptionUpdates(clerkUserId, subscription);
+    return { success: true };
   } catch (error) {
-    console.error(`❌ Webhook retrieval failed:`, error);
+    console.error(`  ❌ Failed to process payment_succeeded:`, error);
     return { success: false };
   }
 }
 
 // Handle invoice payment failed
 async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
-  console.log(`❌ Invoice payment failed: ${invoice.id}`);
+  console.log(`❌ handleInvoicePaymentFailed: ${invoice.id}`);
+
+  const subscriptionId = invoice.lines.data[0]?.subscription as string | null;
+  const customerId = invoice.customer as string;
+
+  if (!subscriptionId || !customerId) {
+    console.log(`  ℹ️ Missing subscription/customer — skipping`);
+    return { success: true };
+  }
+
+  console.log(`  → Fetching subscription: ${subscriptionId}`);
 
   try {
-    const subscriptionId = invoice.lines.data[0]?.subscription as string | null;
-    const customerId = invoice.customer as string;
-
-    if (!subscriptionId || !customerId) {
-      console.log(`⏭️ Missing subscription/customer, skipping...`);
-      return { success: true };
-    }
-
-    // Get subscription
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    const clerkUserId = await resolveClerkUserId(subscription, customerId);
 
-    // Update to past_due status
-    let clerkUserId = subscription.metadata?.clerkUserId;
-
-    if (!clerkUserId) {
-      // Fallback 1: Look up by stripeCustomerId in Convex
-      try {
-        const users = await convex.query(api.users.getByStripeCustomerId, {
-          stripeCustomerId: customerId
-        });
-
-        if (users && users.length > 0) {
-          clerkUserId = users[0].clerkId;
-        } else {
-          // Fallback 2: Check Stripe customer metadata
-          const customer = await stripe.customers.retrieve(customerId);
-
-          // Check if customer is deleted before accessing metadata
-          if (!("deleted" in customer) || !customer.deleted) {
-            clerkUserId = (customer as Stripe.Customer).metadata?.clerkUserId;
-          }
-        }
-      } catch (err) {
-        console.warn("Could not lookup user for payment failure:", err);
-      }
+    if (clerkUserId === null) {
+      return { success: true }; // External purchase saved as pending
     }
 
-    if (!clerkUserId) {
-      console.warn(
-        `⚠️ Cannot find clerkUserId for payment failure on invoice ${invoice.id}. Skipping.`
-      );
-      return { success: true };
-    }
-
-    // ✨ NEW: Ensure user exists before updating subscription
-    try {
-      await convex.mutation(api.users.getOrCreateUserFromWebhook, {
-        clerkId: clerkUserId,
-        email:
-          subscription.metadata?.email || (invoice.customer_email ?? undefined)
-      });
-    } catch (error) {
-      console.error(
-        `⚠️ Could not auto-create user for payment failure: ${error}`
-      );
-    }
-
-    const priceId = subscription.items.data[0]?.price.id || "";
-
-    // ✅ NEW: Implement 7-day grace period
-    // User enters past_due state but retains full access for 7 days to recover payment
+    // Set 7-day grace period for past_due
     const gracePeriodDays = 7;
     const gracePeriodEnd = Date.now() + gracePeriodDays * 24 * 60 * 60 * 1000;
 
     console.log(
-      `⏳ Setting 7-day grace period for past_due. Access retained until: ${new Date(gracePeriodEnd).toISOString()}`
+      `  ⏳ Setting 7-day grace period. Access retained until: ${new Date(gracePeriodEnd).toISOString()}`
     );
 
-    await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
-      clerkUserId,
-      stripeSubscriptionId: subscription.id,
-      stripeCustomerId: customerId,
+    await syncAllSubscriptionUpdates(clerkUserId, subscription, {
       status: "past_due",
-      priceId,
-      productId: subscription.items.data[0]?.price.product as string,
-      currentPeriodStart: subscription.items.data[0].current_period_start
-        ? subscription.items.data[0].current_period_start * 1000
-        : Date.now(),
-      currentPeriodEnd: subscription.items.data[0].current_period_end
-        ? subscription.items.data[0].current_period_end * 1000
-        : Date.now() + 30 * 24 * 60 * 60 * 1000,
-      cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      // ✅ NEW: Pass grace period tracking fields
-      trialEndDate: undefined, // Not a trial period
       lastPaymentFailedAt: Date.now(),
       paymentFailureGracePeriodEnd: gracePeriodEnd
     });
 
-    console.log(`✅ Subscription status updated to past_due`);
     return { success: true };
   } catch (error) {
-    console.error(`❌ Payment failure handling failed:`, error);
+    console.error(`  ❌ Failed to process payment_failed:`, error);
     return { success: false };
   }
 }
 
-// ✅ NEW HANDLER: checkout.session.completed (new subscription from checkout)
+// ✅ Checkout completion (new subscription from checkout)
 async function handleCheckoutSessionCompleted(
   session: Stripe.Checkout.Session
 ) {
-  console.log(`✅ Checkout completed: ${session.id}`);
+  console.log(`✅ handleCheckoutSessionCompleted: ${session.id}`);
+
+  const subscriptionId = session.subscription as string | null;
+  if (!subscriptionId) {
+    console.log(`  ℹ️ Not a subscription checkout — skipping`);
+    return { success: true };
+  }
+
+  console.log(`  → Fetching subscription: ${subscriptionId}`);
 
   try {
-    // Checkout session contains subscription ID if it was a subscription checkout
-    const subscriptionId = session.subscription as string | null;
-    if (!subscriptionId) {
-      console.log(
-        `ℹ️ Checkout ${session.id} is not a subscription, skipping...`
-      );
-      return { success: true };
-    }
-
-    const clerkUserId = session.metadata?.clerkUserId;
-    if (!clerkUserId) {
-      console.error(`❌ Checkout ${session.id} missing clerkUserId metadata`);
-      return { success: false };
-    }
-
-    // ✅ Auto-create user if missing
-    try {
-      await convex.mutation(api.users.getOrCreateUserFromWebhook, {
-        clerkId: clerkUserId,
-        email: session.customer_email || undefined,
-        name: undefined
-      });
-    } catch (error) {
-      console.error(`❌ Failed to ensure user exists: ${error}`);
-      return { success: false };
-    }
-
-    // Fetch the actual subscription from Stripe
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    const customerId = subscription.customer as string;
+    const clerkUserId = await resolveClerkUserId(subscription, customerId);
 
-    // Process as a subscription update (same logic)
-    return await handleSubscriptionUpdate(subscription);
+    if (clerkUserId === null) {
+      return { success: true }; // External purchase saved as pending
+    }
+
+    await syncAllSubscriptionUpdates(clerkUserId, subscription);
+    return { success: true };
   } catch (error) {
-    console.error(`❌ Checkout completion failed:`, error);
+    console.error(`  ❌ Failed to process checkout:`, error);
     return { success: false };
   }
-}
-
-// Helper: Map Stripe price ID to package (valid schema values)
-function getPricePackageMapping(
-  priceId: string
-): "sandbox" | "clientProject" | "basic" | "pro" {
-  // Map environment variable price IDs to valid plan types
-  // Valid types: "sandbox", "clientProject", "basic", "pro"
-  const mapping: Record<string, "sandbox" | "clientProject" | "basic" | "pro"> =
-    {
-      // Paid plans
-      [process.env.STRIPE_PRICE_SANDBOX_LEVEL_MONTHLY || ""]: "sandbox",
-      [process.env.STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY || ""]:
-        "clientProject",
-      [process.env.STRIPE_PRICE_BASIC_ID || ""]: "basic",
-      [process.env.STRIPE_PRICE_PRO_ID || ""]: "pro",
-
-      // Free plans - map to "sandbox" plan type
-      [process.env.STRIPE_PRICE_ANALYZING_TRENDS_FREE || ""]: "sandbox",
-      [process.env.STRIPE_PRICE_SUMMER_SANDBOX_FREE || ""]: "sandbox",
-      [process.env.STRIPE_PRICE_WORKSHOP_SANDBOX_FREE || ""]: "sandbox",
-      [process.env.STRIPE_PRICE_CLASSROOM_SPEAKER_FREE || ""]: "sandbox",
-      [process.env.STRIPE_PRICE_SUBSTACK_GPT_FREE || ""]: "sandbox"
-    };
-
-  const planType = mapping[priceId];
-
-  if (!planType) {
-    throw new Error(
-      `Cannot map price ID "${priceId}" to a valid plan type. ` +
-        `Valid types are: "sandbox", "clientProject", "basic", "pro". ` +
-        `Please check that the price ID exists in your Stripe account and is configured in environment variables.`
-    );
-  }
-
-  return planType;
 }
 // Helper: Get customer email from Stripe
 async function getCustomerEmail(
