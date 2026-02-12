@@ -87,20 +87,41 @@ export const syncSubscriptionFromStripe = mutation({
       // Try to find package by productId then priceId
       let pkg: any = null;
       if (args.productId) {
-        pkg = await ctx.db
+        // Use .collect() to fetch all matches and avoid throwing if duplicates exist.
+        const pkgs = await ctx.db
           .query("packages")
           .withIndex("by_stripeProductId", (q) =>
             q.eq("stripeProductId", args.productId!)
           )
-          .unique();
+          .collect();
+
+        if (pkgs.length > 1) {
+          console.warn(
+            `⚠️ Multiple packages found for productId=${args.productId}: [${pkgs
+              .map((p: any) => p._id)
+              .join(", ")}]`
+          );
+        }
+
+        pkg = pkgs[0] ?? null;
       }
       if (!pkg && args.priceId) {
-        pkg = await ctx.db
+        const pkgs = await ctx.db
           .query("packages")
           .withIndex("by_stripePriceId", (q) =>
             q.eq("stripePriceId", args.priceId!)
           )
-          .unique();
+          .collect();
+
+        if (pkgs.length > 1) {
+          console.warn(
+            `⚠️ Multiple packages found for priceId=${args.priceId}: [${pkgs
+              .map((p: any) => p._id)
+              .join(", ")}]`
+          );
+        }
+
+        pkg = pkgs[0] ?? null;
       }
 
       if (pkg) {
