@@ -44,8 +44,16 @@ export const createChat = mutation({
       }
 
       // Only allow active subscriptions for GPT access
-      if (subscription.status !== "active") {
-        throw new Error(`Subscription is ${subscription.status}, not active`);
+      // if (subscription.status !== "active") {
+      //   throw new Error(`Subscription is ${subscription.status}, not active`);
+      // }
+      if (
+        subscription.status !== "active" &&
+        subscription.status !== "trialing"
+      ) {
+        throw new Error(
+          `Subscription is ${subscription.status}, not active or trialing`
+        );
       }
 
       // 4️⃣ Use helper to find package (tries productId, falls back to priceId)

@@ -618,8 +618,15 @@ export const updateAICredits = mutation({
     }
 
     // Check if user has subscription
-    if (!user.subscription || user.subscription.status !== "active") {
-      throw new Error("No active subscription");
+    // if (!user.subscription || user.subscription.status !== "active") {
+    //   throw new Error("No active subscription");
+    // }
+    if (
+      !user.subscription ||
+      (user.subscription.status !== "active" &&
+        user.subscription.status !== "trialing")
+    ) {
+      throw new Error("No active or trialing subscription");
     }
 
     if ((user.aiCredits || 0) < args.creditsUsed) {

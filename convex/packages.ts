@@ -854,13 +854,21 @@ export const getSubscriptionGpts = query({
     }
 
     // Only allow active subscriptions
-    if (subscription.status !== "active") {
-      console.log(
-        `⚠️ Subscription status is ${subscription.status}, not active`
-      );
-      return [];
-    }
+    // if (subscription.status !== "active") {
+    //   console.log(
+    //     `⚠️ Subscription status is ${subscription.status}, not active`
+    //   );
+    //   return [];
+    // }
 
+    if (
+      subscription.status !== "active" &&
+      subscription.status !== "trialing"
+    ) {
+      throw new Error(
+        `Subscription is ${subscription.status}, not active or trialing`
+      );
+    }
     // Step 4: Find the package matching productId or priceId
     let matchedPackage = null;
 
