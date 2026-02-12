@@ -333,7 +333,10 @@ export const getUserAccessibleGpts = query({
     const subscription = user.subscription;
     if (!subscription) return [];
 
-    if (subscription.status !== "active") return [];
+    const isAuthorized =
+      subscription.status === "active" || subscription.status === "trialing";
+
+    if (!isAuthorized) return [];
 
     // Find package by productId first, then fallback to priceId
     let pkg = null as any;
