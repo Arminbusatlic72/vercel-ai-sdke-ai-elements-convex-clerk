@@ -112,8 +112,8 @@ export type UserRole = "admin" | "user";
  */
 export interface UserSubscription {
   status: SubscriptionStatus;
-  plan: string; // matches your package key ("sandbox", "substack", etc)
-  maxGpts: number;
+  plan: string;
+  maxGpts?: number;
   gptIds: string[];
   cancelAtPeriodEnd?: boolean;
   currentPeriodEnd?: number;
@@ -134,7 +134,7 @@ export interface SubscriptionData {
   aiCreditsResetAt?: number;
   canCreateProject?: boolean; // Make optional to match Convex return type
 
-  maxGPTs?: number; // Add these fields that Convex is returning
+  maxGpts?: number; // Add these fields that Convex is returning
   currentGPTCount?: number;
 
   subscription: UserSubscription | null;
