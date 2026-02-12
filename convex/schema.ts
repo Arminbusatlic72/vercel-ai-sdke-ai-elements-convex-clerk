@@ -25,12 +25,7 @@ export default defineSchema({
           v.literal("paused")
         ),
         stripeSubscriptionId: v.string(),
-        plan: v.union(
-          v.literal("sandbox"),
-          v.literal("clientProject"),
-          v.literal("basic"),
-          v.literal("pro")
-        ),
+        plan: v.string(),
         productId: v.optional(v.string()), // Primary matcher (prices change, products don't)
         priceId: v.optional(v.string()), // Kept for backward compatibility
         productName: v.optional(v.string()),
@@ -41,7 +36,7 @@ export default defineSchema({
         trialEndDate: v.optional(v.number()), // Trial period end
         paymentFailureGracePeriodEnd: v.optional(v.number()), // Grace period after payment fail
         lastPaymentFailedAt: v.optional(v.number()), // Last payment failure timestamp
-        maxGpts: v.number(),
+        maxGpts: v.optional(v.number()),
         gptIds: v.array(v.string())
       })
     ),
