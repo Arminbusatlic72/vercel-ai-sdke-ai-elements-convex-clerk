@@ -324,7 +324,8 @@ export const searchChats = query(
     // ✅ Start query scoped to userId
     let chatQuery = ctx.db
       .query("chats")
-      .withIndex("by_user", (q) => q.eq("userId", identity.subject));
+      .withIndex("by_user", (q) => q.eq("userId", identity.subject))
+      .order("desc");
 
     // ✅ Optionally filter by project
     if (projectId) {
