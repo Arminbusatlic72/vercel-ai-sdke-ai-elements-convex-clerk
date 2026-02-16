@@ -509,14 +509,34 @@ export async function POST(req: Request) {
       tools: tools ? Object.keys(tools).join(", ") : "None"
     });
 
-    // GPT-5 / reasoning model fix: strip orphaned reasoning items from message history.
-    // Reasoning models (gpt-5, o1, o3) return a "reasoning" item paired with text.
-    // On the next turn, OpenAI rejects unpaired reasoning items with a 400 error.
-    // We keep only "text" parts from assistant messages before replaying history.
+    // GPT-5 / reasoning model fix:
+    // Reasoning models pair a reasoning item with a message item.
+    // OpenAI rejects history where either exists without the other.
+    // We must preserve the full message shape (including id) so convertToModelMessages
+    // works correctly across all turns — only parts is replaced with text-only.
     const sanitizedMessages = messages.map((m: any) => {
-      if (m.role !== "assistant" || !Array.isArray(m.content)) return m;
-      const textOnly = m.content.filter((part: any) => part.type === "text");
-      return { ...m, content: textOnly.length > 0 ? textOnly : m.content };
+      if (m.role !== "assistant") return m;
+
+      // Resolve plain text from wherever the SDK stored it
+      let textContent = "";
+      if (Array.isArray(m.parts)) {
+        const textPart = m.parts.find((p: any) => p.type === "text");
+        textContent = textPart?.text ?? "";
+      }
+      if (!textContent && typeof m.content === "string") {
+        textContent = m.content;
+      }
+      if (!textContent && Array.isArray(m.content)) {
+        const textPart = m.content.find((p: any) => p.type === "text");
+        textContent = textPart?.text ?? "";
+      }
+
+      // Return the full message with only a clean text part — no reasoning items
+      return {
+        ...m,
+        content: textContent || m.content,
+        parts: [{ type: "text", text: textContent || m.content }]
+      };
     });
 
     const result = streamText({
