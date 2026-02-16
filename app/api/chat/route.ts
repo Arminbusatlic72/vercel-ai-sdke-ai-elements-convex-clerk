@@ -535,6 +535,21 @@ export async function POST(req: Request) {
       tools: tools ? Object.keys(tools).join(", ") : "None"
     });
 
+    // DEBUG — log the raw assistant message structure so we can see where reasoning lives
+    const assistantMessages = messages.filter(
+      (m: any) => m.role === "assistant"
+    );
+    if (assistantMessages.length > 0) {
+      console.log(
+        "[DEBUG ASSISTANT MSG KEYS]",
+        Object.keys(assistantMessages[0])
+      );
+      console.log(
+        "[DEBUG ASSISTANT MSG]",
+        JSON.stringify(assistantMessages[0], null, 2).slice(0, 1000)
+      );
+    }
+
     const sanitizedMessages = sanitizeMessagesForReplay(messages);
 
     const result = streamText({
@@ -542,7 +557,7 @@ export async function POST(req: Request) {
       messages: await convertToModelMessages(sanitizedMessages),
       system: combinedSystemPrompt,
       tools,
-      maxOutputTokens: 4096, // hard cap — adjust up if responses are being cut off
+      maxOutputTokens: 2048, // raised — 2048 was cutting off longer responses
       maxRetries: 1,
       onFinish: ({ text, finishReason }) => {
         const duration = Date.now() - startTime;
