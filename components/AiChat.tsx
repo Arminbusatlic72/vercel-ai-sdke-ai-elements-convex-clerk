@@ -329,6 +329,7 @@ function AiChat<
             className="shadow-sm"
             globalDrop
             multiple
+            accept="image/jpeg,image/png,image/gif,image/webp"
           >
             <PromptInputHeader>
               <PromptInputAttachments>
