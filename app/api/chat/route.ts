@@ -297,7 +297,7 @@ const google = createGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY!
 });
 
-// ✅ Fire-and-forget helper — never awaited, so it never blocks function termination
+// Fire-and-forget helper — never awaited, so it never blocks function termination
 function storeMessageNoWait(payload: {
   chatId: Id<"chats">;
   content: string;
@@ -310,6 +310,8 @@ function storeMessageNoWait(payload: {
 }
 
 export async function POST(req: Request) {
+  const startTime = Date.now();
+
   try {
     const {
       messages,
@@ -339,7 +341,7 @@ export async function POST(req: Request) {
       )
     });
 
-    // ✅ Ensure chat exists first (required before anything else)
+    // Ensure chat exists first (required before anything else)
     let resolvedChatId = chatId;
     if (!resolvedChatId) {
       if (!userId) {
@@ -364,7 +366,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // ✅ Parallelize DB calls — fetch general settings and GPT config simultaneously
+    // Parallelize DB calls — fetch general settings and GPT config simultaneously
     const [generalSettings, dbGpt] = await Promise.all([
       convex.query(api.gpts.getGeneralSettings, {}).catch((err) => {
         console.error("Error fetching general settings:", err);
@@ -373,7 +375,7 @@ export async function POST(req: Request) {
       gptId ? resolveGptFromDb(gptId).catch(() => null) : Promise.resolve(null)
     ]);
 
-    // --- Resolve model, API key, system prompt ---
+    // Resolve model, API key, system prompt
     let resolvedModel: string = "gpt-4o-mini";
     let apiKey: string | undefined;
     let vectorStoreId: string | undefined;
@@ -420,10 +422,10 @@ export async function POST(req: Request) {
       combinedSystemPrompt = `${userSystemPrompt}\n\n${combinedSystemPrompt}`;
     }
 
-    // --- OpenAI client ---
+    // OpenAI client
     const openaiClient = createOpenAI({ apiKey });
 
-    // --- Prepare tools ---
+    // Prepare tools
     let tools: ToolSet | undefined;
 
     if (webSearch) {
@@ -461,7 +463,7 @@ export async function POST(req: Request) {
       console.log(`[FILE SEARCH] Enabled for vector store: ${vectorStoreId}`);
     }
 
-    // --- Select model ---
+    // Select model
     let selectedModel: LanguageModel;
     if (
       (resolvedModel.toLowerCase() ?? "").includes("gpt") ||
@@ -472,7 +474,7 @@ export async function POST(req: Request) {
       selectedModel = google(resolvedModel);
     }
 
-    // ✅ Store only the latest user message, fire-and-forget (no loop, no await)
+    // Store only the latest user message, fire-and-forget (no loop, no await)
     const lastUserMessage = [...messages]
       .reverse()
       .find((m: any) => m.role === "user");
@@ -507,17 +509,29 @@ export async function POST(req: Request) {
       tools: tools ? Object.keys(tools).join(", ") : "None"
     });
 
-    // ✅ streamText with maxTokens enforced + non-async onFinish (fire-and-forget)
+    // GPT-5 / reasoning model fix: strip orphaned reasoning items from message history.
+    // Reasoning models (gpt-5, o1, o3) return a "reasoning" item paired with text.
+    // On the next turn, OpenAI rejects unpaired reasoning items with a 400 error.
+    // We keep only "text" parts from assistant messages before replaying history.
+    const sanitizedMessages = messages.map((m: any) => {
+      if (m.role !== "assistant" || !Array.isArray(m.content)) return m;
+      const textOnly = m.content.filter((part: any) => part.type === "text");
+      return { ...m, content: textOnly.length > 0 ? textOnly : m.content };
+    });
+
     const result = streamText({
       model: selectedModel,
-      messages: convertToModelMessages(messages),
+      messages: convertToModelMessages(sanitizedMessages),
       system: combinedSystemPrompt,
       tools,
-      maxOutputTokens: 2048, // ✅ hard cap — prevents runaway generation; adjust if needed
-      maxRetries: 1, // ✅ reduced from 2 to cut wasted time on retries
+      maxOutputTokens: 2048, // hard cap — prevents runaway generation; raise if needed
+      maxRetries: 1, // reduced from 2 to avoid wasting time on retries
       onFinish: ({ text, finishReason }) => {
-        // ✅ NOT async — returning void immediately so Vercel can close the function
-        console.log(`[CHAT COMPLETE] Reason: ${finishReason}`);
+        // NOT async — returns void immediately so Vercel can close the function
+        const duration = Date.now() - startTime;
+        console.log(
+          `[CHAT COMPLETE] Reason: ${finishReason} | Duration: ${duration}ms`
+        );
 
         if (text?.trim()) {
           storeMessageNoWait({
@@ -532,7 +546,8 @@ export async function POST(req: Request) {
 
     return result.toUIMessageStreamResponse();
   } catch (error) {
-    console.error("[CHAT ERROR]", error);
+    const duration = Date.now() - startTime;
+    console.error(`[CHAT ERROR] Duration: ${duration}ms`, error);
 
     return new Response(
       JSON.stringify({
