@@ -542,7 +542,7 @@ export async function POST(req: Request) {
       messages: await convertToModelMessages(sanitizedMessages),
       system: combinedSystemPrompt,
       tools,
-      maxOutputTokens: 2048, // hard cap — adjust up if responses are being cut off
+      maxOutputTokens: 4096, // hard cap — adjust up if responses are being cut off
       maxRetries: 1,
       onFinish: ({ text, finishReason }) => {
         const duration = Date.now() - startTime;
