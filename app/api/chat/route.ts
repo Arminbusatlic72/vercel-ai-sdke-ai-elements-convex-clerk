@@ -241,7 +241,7 @@ export async function POST(req: Request) {
 
     const result = streamText({
       model: selectedModel,
-      messages: convertToModelMessages(messages),
+      messages: await convertToModelMessages(messages),
       system: combinedSystemPrompt,
       tools,
       maxRetries: 2,
