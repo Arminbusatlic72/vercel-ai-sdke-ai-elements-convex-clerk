@@ -67,6 +67,25 @@ export function GPTDetailsCard({
           </div>
         </div>
 
+        {selectedGpt.ragTriggerKeywords &&
+          selectedGpt.ragTriggerKeywords.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                RAG Trigger Keywords
+              </label>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {selectedGpt.ragTriggerKeywords.map((kw) => (
+                  <span
+                    key={kw}
+                    className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-full"
+                  >
+                    {kw}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
         <div>
           <label className="text-sm font-medium text-gray-500">API Key</label>
           <div className="mt-1">

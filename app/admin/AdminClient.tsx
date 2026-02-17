@@ -15,6 +15,7 @@ import { DocumentsCard } from "@/components/admin/DocumentsCard";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { ConfirmModal } from "@/components/admin/modals/ConfirmModal";
 import { AlertModal } from "@/components/admin/modals/AlertModal";
+import { generateRagKeywordSuggestions } from "@/lib/rag-keywords";
 
 const sanitizeGptId = (value: string) => {
   return value
@@ -48,6 +49,7 @@ export default function AdminClient() {
   const [model, setModel] = useState("gpt-4");
   const [apiKey, setApiKey] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
+  const [ragTriggerKeywordsInput, setRagTriggerKeywordsInput] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [selectedGptId, setSelectedGptId] = useState<string | null>(
     gpts[0]?.gptId ?? null
@@ -88,6 +90,21 @@ export default function AdminClient() {
     }
   }, [generalSettings]);
 
+  useEffect(() => {
+    if (isEditing) return;
+    if (ragTriggerKeywordsInput.trim().length > 0) return;
+
+    const suggestions = generateRagKeywordSuggestions({
+      gptId: gptIdInput,
+      name,
+      description
+    });
+
+    if (suggestions.length > 0) {
+      setRagTriggerKeywordsInput(suggestions.join(", "));
+    }
+  }, [gptIdInput, name, description, isEditing, ragTriggerKeywordsInput]);
+
   // Form handlers
   const resetForm = () => {
     setGptId("");
@@ -97,9 +114,19 @@ export default function AdminClient() {
     setModel("gpt-5");
     setApiKey("");
     setSystemPrompt("");
+    setRagTriggerKeywordsInput("");
     setIsEditing(false);
     setPdfError(null);
     setIsSubmitting(false);
+  };
+
+  const parseRagKeywords = (value: string): string[] | undefined => {
+    const keywords = value
+      .split(",")
+      .map((kw) => kw.trim())
+      .filter(Boolean);
+
+    return keywords.length > 0 ? keywords : undefined;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -121,6 +148,7 @@ export default function AdminClient() {
         model,
         apiKey: apiKey || undefined,
         systemPrompt,
+        ragTriggerKeywords: parseRagKeywords(ragTriggerKeywordsInput),
         packageId: selectedPackageId
           ? (selectedPackageId as Id<"packages">)
           : undefined // Send to Convex
@@ -148,6 +176,7 @@ export default function AdminClient() {
     setModel(g.model);
     setApiKey(g.apiKey || "");
     setSystemPrompt(g.systemPrompt || "");
+    setRagTriggerKeywordsInput((g.ragTriggerKeywords || []).join(", "));
     setSelectedPackageId(g.packageId || ""); // Set package on edit
     setIsEditing(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -430,6 +459,7 @@ export default function AdminClient() {
               model={model}
               apiKey={apiKey}
               systemPrompt={systemPrompt}
+              ragTriggerKeywordsInput={ragTriggerKeywordsInput}
               generalSystemPrompt={generalSystemPrompt}
               isSubmitting={isSubmitting}
               sanitizedPreview={sanitizedPreview}
@@ -443,6 +473,7 @@ export default function AdminClient() {
               onModelChange={setModel}
               onApiKeyChange={setApiKey}
               onSystemPromptChange={setSystemPrompt}
+              onRagTriggerKeywordsChange={setRagTriggerKeywordsInput}
               onSubmit={handleSubmit}
               onReset={handleResetClick}
             />

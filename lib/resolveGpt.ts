@@ -37,6 +37,7 @@ export interface ResolvedGpt {
   systemPrompt: string;
   apiKey?: string;
   vectorStoreId?: string;
+  ragTriggerKeywords?: string[];
   pdfFiles?: Array<{
     fileName: string;
     openaiFileId: string;
@@ -58,6 +59,7 @@ export async function resolveGptFromDb(
       systemPrompt: gpt.systemPrompt ?? "You are a helpful AI assistant.",
       apiKey: gpt.apiKey,
       vectorStoreId: gpt.vectorStoreId,
+      ragTriggerKeywords: gpt.ragTriggerKeywords,
       pdfFiles: gpt.pdfFiles
     };
   } catch (error) {

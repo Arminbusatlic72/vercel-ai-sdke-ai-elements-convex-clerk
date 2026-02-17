@@ -133,6 +133,7 @@ export default defineSchema({
     apiKey: v.optional(v.string()),
     packageId: v.optional(v.id("packages")),
     vectorStoreId: v.optional(v.string()),
+    ragTriggerKeywords: v.optional(v.array(v.string())),
     pdfFiles: v.optional(
       v.array(
         v.object({

@@ -97,6 +97,7 @@ export async function POST(req: Request) {
     let resolvedModel: string = "gpt-4o-mini";
     let apiKey: string | undefined;
     let vectorStoreId: string | undefined;
+    let ragTriggerKeywords: string[] | undefined;
     let combinedSystemPrompt = "";
 
     if (gptId) {
@@ -118,6 +119,7 @@ export async function POST(req: Request) {
 
         apiKey = dbGpt.apiKey || generalSettings?.defaultApiKey;
         vectorStoreId = dbGpt.vectorStoreId;
+        ragTriggerKeywords = dbGpt.ragTriggerKeywords;
         resolvedModel = userSelectedModel ?? dbGpt.model ?? resolvedModel;
 
         console.log("[SYSTEM PROMPT BREAKDOWN]", {
@@ -226,7 +228,8 @@ export async function POST(req: Request) {
     const userMessageWordCount = userMessageText
       ? userMessageText.trim().split(/\s+/).length
       : 0;
-    const useRAG = vectorStoreId && shouldUseRAG(userMessageText);
+    const useRAG =
+      vectorStoreId && shouldUseRAG(userMessageText, ragTriggerKeywords);
 
     console.log("[RAG CHECK]", {
       extractedText: userMessageText,

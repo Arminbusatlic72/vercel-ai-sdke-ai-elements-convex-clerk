@@ -82,6 +82,7 @@ export interface GPTConfig {
   apiKey?: string;
   systemPrompt?: string;
   vectorStoreId?: string;
+  ragTriggerKeywords?: string[];
   packageId?: Id<"packages">;
   pdfFiles?: {
     fileName: string;

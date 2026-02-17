@@ -12,6 +12,7 @@ interface GPTFormCardProps {
   model: string;
   apiKey: string;
   systemPrompt: string;
+  ragTriggerKeywordsInput: string;
   generalSystemPrompt: string;
   isSubmitting: boolean;
   sanitizedPreview: string;
@@ -25,6 +26,7 @@ interface GPTFormCardProps {
   onModelChange: (value: string) => void;
   onApiKeyChange: (value: string) => void;
   onSystemPromptChange: (value: string) => void;
+  onRagTriggerKeywordsChange: (value: string) => void;
   onSubmit: (e: React.FormEvent) => void;
   onReset: () => void;
 }
@@ -42,6 +44,7 @@ export function GPTFormCard({
   model,
   apiKey,
   systemPrompt,
+  ragTriggerKeywordsInput,
   generalSystemPrompt,
   isSubmitting,
   sanitizedPreview,
@@ -55,6 +58,7 @@ export function GPTFormCard({
   onModelChange,
   onApiKeyChange,
   onSystemPromptChange,
+  onRagTriggerKeywordsChange,
   onSubmit,
   onReset
 }: GPTFormCardProps) {
@@ -152,6 +156,22 @@ export function GPTFormCard({
           />
           <p className="mt-1 text-xs text-gray-500">
             Helps users understand when to use this GPT
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            RAG Trigger Keywords (Optional)
+          </label>
+          <input
+            type="text"
+            value={ragTriggerKeywordsInput}
+            onChange={(e) => onRagTriggerKeywordsChange(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="e.g., contract, clause, agreement, terms"
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Comma-separated keywords that trigger file_search for this GPT.
           </p>
         </div>
 

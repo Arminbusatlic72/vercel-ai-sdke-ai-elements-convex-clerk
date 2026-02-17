@@ -110,6 +110,7 @@ export const upsertGpt = mutation({
     model: v.string(),
     systemPrompt: v.string(),
     apiKey: v.optional(v.string()),
+    ragTriggerKeywords: v.optional(v.array(v.string())),
     // ADD THIS LINE BELOW:
     packageId: v.optional(v.id("packages"))
   },

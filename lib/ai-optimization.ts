@@ -11,7 +11,6 @@
 
 /**
  * In-memory cache for compressed prompts.
- * Key: hash of original prompt, Value: compressed version
  */
 const PROMPT_COMPRESSION_CACHE = new Map<string, string>();
 
@@ -36,20 +35,15 @@ function hashString(str: string): string {
  *
  * Strategy:
  * - Extract explicit instructions (role, directives, capabilities)
- * - Preserve unique/complex statements that don't fit patterns
+ * - Preserve unique/complex statements that do not fit patterns
  * - Use fallback if compression is too aggressive
- *
- * @param originalPrompt - Full system prompt (may have duplicative prose)
- * @returns Compressed prompt with same semantics, ~40% fewer tokens
  */
 export function summarizeSystemPrompt(originalPrompt: string): string {
-  // Check cache
   const cacheKey = hashString(originalPrompt);
   if (PROMPT_COMPRESSION_CACHE.has(cacheKey)) {
     return PROMPT_COMPRESSION_CACHE.get(cacheKey)!;
   }
 
-  // Split into sentences for analysis
   const sentences = originalPrompt
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())
@@ -60,12 +54,10 @@ export function summarizeSystemPrompt(originalPrompt: string): string {
   const extracted: string[] = [];
   const patternMatched = new Set<number>();
 
-  // Extract key instruction patterns
   for (let i = 0; i < sentences.length; i++) {
     const sentence = sentences[i];
     const lower = sentence.toLowerCase();
 
-    // ROLE detection: "You are a..."
     if (lower.startsWith("you are")) {
       const roleMatch = sentence.match(/you are(?:\s+a)?\s+([^.!?]+)/i);
       if (roleMatch) {
@@ -76,7 +68,6 @@ export function summarizeSystemPrompt(originalPrompt: string): string {
       }
     }
 
-    // DIRECTIVE patterns: "Always...", "Never...", "When...", "Should...", "Must..."
     if (
       /^(Always|Never|When|Should|Must|Do not|Don't|Remember|Ensure|Make sure)/i.test(
         sentence
@@ -89,7 +80,7 @@ export function summarizeSystemPrompt(originalPrompt: string): string {
         )
         .replace(/([,.])\s+/g, "; ")
         .replace(/\s{2,}/g, " ")
-        .slice(0, 120); // Slightly increased limit
+        .slice(0, 120);
       if (directive.length > 5) {
         extracted.push(`- ${directive}`);
         patternMatched.add(i);
@@ -97,7 +88,6 @@ export function summarizeSystemPrompt(originalPrompt: string): string {
       }
     }
 
-    // CAPABILITY statements: "You can...", "You have..."
     if (/^You (can|have|support|will|should)/i.test(sentence)) {
       const capMatch = sentence.match(
         /(?:can|have|support|will|should)\s+([^.!?]+)/i
@@ -112,7 +102,6 @@ export function summarizeSystemPrompt(originalPrompt: string): string {
       }
     }
 
-    // BEHAVIORAL patterns
     if (
       /^(Respond|Provide|Answer|Explain|Generate|Consider|Focus|Prioritize)/i.test(
         sentence
@@ -127,7 +116,6 @@ export function summarizeSystemPrompt(originalPrompt: string): string {
     }
   }
 
-  // Add non-pattern sentences that are important (short, unique, not generic filler)
   const otherStatements: string[] = [];
   for (let i = 0; i < sentences.length; i++) {
     if (patternMatched.has(i)) continue;
@@ -135,7 +123,6 @@ export function summarizeSystemPrompt(originalPrompt: string): string {
     const sentence = sentences[i];
     const lower = sentence.toLowerCase();
 
-    // Skip generic fillers
     if (
       sentence.length < 15 ||
       /^(This|That|These|Those|It|They|The user|Your|My|If you|When you|We|Our)\s+/.test(
@@ -146,13 +133,11 @@ export function summarizeSystemPrompt(originalPrompt: string): string {
       continue;
     }
 
-    // Keep substantive statements (between 15-120 chars)
     if (sentence.length >= 15 && sentence.length <= 120) {
       otherStatements.push(sentence);
     }
   }
 
-  // Combine: structured rules + important statements
   let compressed = "";
   if (extracted.length > 0) {
     compressed += extracted.join("\n");
@@ -162,7 +147,6 @@ export function summarizeSystemPrompt(originalPrompt: string): string {
     compressed += otherStatements.slice(0, 5).join(" ");
   }
 
-  // Safety: if compression is too aggressive (< 10% of original), keep original
   if (compressed.length < originalPrompt.length * 0.1) {
     console.log(
       `[COMPRESSION WARNING] Over-aggressive compression (${Math.round((compressed.length / originalPrompt.length) * 100)}%), reverting to original`
@@ -170,12 +154,10 @@ export function summarizeSystemPrompt(originalPrompt: string): string {
     return originalPrompt;
   }
 
-  // If empty result, return original
   if (compressed.length < 10) {
     return originalPrompt;
   }
 
-  // Cache the result
   PROMPT_COMPRESSION_CACHE.set(cacheKey, compressed);
 
   return compressed;
@@ -186,155 +168,52 @@ export function summarizeSystemPrompt(originalPrompt: string): string {
 // ============================================================================
 
 /**
- * SEMANTIC RAG TRIGGER
- *
- * Determines if file_search tool should be enabled based on user message.
- * Uses keyword heuristics (no model call) to avoid latency.
- *
- * Triggers RAG for:
- * - Questions about documents/uploaded content
- * - Search/lookup style queries
- * - Analytical questions over data
- * - Personal profile queries (skills, experience, education, etc.)
- *
- * Skips RAG for:
- * - General conversation
- * - Simple commands
- * - Greeting/small talk
- * - Very short messages (< 3 words)
- *
- * @param userMessage - Latest user message
- * @returns true if RAG (file_search) should be used
+ * Deterministic RAG trigger based on admin keywords, manual overrides,
+ * and generic document cues as a fallback.
  */
-export function shouldUseRAG(userMessage: string): boolean {
-  const lower = userMessage.toLowerCase();
-  const wordCount = userMessage.split(/\s+/).length;
+export function shouldUseRAG(
+  userMessage: string,
+  ragTriggerKeywords?: string[]
+): boolean {
+  const normalized = userMessage.toLowerCase().trim();
+  if (!normalized) return false;
 
-  // Skip RAG for very short messages (likely casual)
-  if (wordCount < 3) return false;
+  const keywordList = (ragTriggerKeywords ?? [])
+    .map((kw) => kw.trim().toLowerCase())
+    .filter(Boolean);
 
-  // ===== EXPANDED RAG KEYWORDS =====
-  // Document references
-  const documentKeywords = [
+  if (
+    keywordList.length > 0 &&
+    keywordList.some((kw) => normalized.includes(kw))
+  ) {
+    return true;
+  }
+
+  const manualOverrides = [
+    "from the docs",
+    "from the files",
+    "from the document",
+    "from the pdf",
+    "according to the pdf",
+    "according to the document"
+  ];
+
+  if (manualOverrides.some((phrase) => normalized.includes(phrase))) {
+    return true;
+  }
+
+  const fallbackDocCues = [
     "document",
     "pdf",
     "file",
-    "uploaded",
-    "paper",
-    "text",
-    "content"
+    "section",
+    "according to"
   ];
 
-  // Search/retrieval intents
-  const searchKeywords = [
-    "search",
-    "find",
-    "retrieve",
-    "look for",
-    "look up",
-    "locate"
-  ];
-
-  // Data extraction/analysis
-  const analysisKeywords = [
-    "summarize",
-    "summary",
-    "extract",
-    "extract",
-    "quote",
-    "relevant",
-    "mentioned",
-    "mentioned in",
-    "according to",
-    "analyze",
-    "analysis"
-  ];
-
-  // Personal profile / CV / Resume content
-  const profileKeywords = [
-    "skills",
-    "skill",
-    "experience",
-    "education",
-    "qualification",
-    "qualified",
-    "background",
-    "resume",
-    "cv",
-    "curriculum",
-    "career",
-    "job",
-    "role",
-    "position",
-    "employment",
-    "history",
-    "studied",
-    "studied at",
-    "worked at",
-    "work experience",
-    "specialization",
-    "expertise",
-    "competency"
-  ];
-
-  // Combine all keyword groups
-  const allKeywords = [
-    ...documentKeywords,
-    ...searchKeywords,
-    ...analysisKeywords,
-    ...profileKeywords
-  ];
-
-  if (allKeywords.some((kw) => lower.includes(kw))) {
+  if (fallbackDocCues.some((cue) => normalized.includes(cue))) {
     return true;
   }
 
-  // ===== IMPROVED PATTERNS =====
-
-  // First-person queries about "my" anything (profile queries)
-  // e.g., "what are my skills?", "tell me about my experience", "my background"
-  if (/\b(my|i)\b/.test(lower) && wordCount >= 4) {
-    // Common profile question patterns
-    const profilePatterns = [
-      /what.*my/i, // "what is my...?", "what are my...?"
-      /tell.*my/i, // "tell me about my..."
-      /about.*my/i, // "about my..."
-      /my.*skill/i, // "my skills"
-      /my.*experience/i, // "my experience"
-      /my.*background/i, // "my background"
-      /my.*education/i, // "my education"
-      /am i.*qualified/i // "am i qualified for..."
-    ];
-
-    if (profilePatterns.some((pattern) => pattern.test(userMessage))) {
-      return true;
-    }
-  }
-
-  // Analytical / data-driven questions (improved patterns)
-  // Note: we avoid overly broad patterns like /what\s+/i to prevent false positives
-  // Only match specific question types that indicate document queries
-  const analyticalPatterns = [
-    /what\s+(information|details|facts|data|qualifications|skills|experience|background|role|positions?|companies?|projects?)/i,
-    /how\s+(does|do|is|are)\s+/i,
-    /explain\s+/i,
-    /compare/i,
-    /analyze/i,
-    /identify/i,
-    /describe/i,
-    /tell\s+me\s+(about|more)\s+/i
-  ];
-
-  if (analyticalPatterns.some((pattern) => pattern.test(userMessage))) {
-    return true;
-  }
-
-  // Context: medium-length focused questions often need RAG (8-30 words)
-  if (wordCount >= 8 && wordCount <= 30) {
-    return true;
-  }
-
-  // Default: no RAG
   return false;
 }
 
