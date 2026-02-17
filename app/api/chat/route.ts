@@ -367,24 +367,8 @@ export async function POST(req: Request) {
       tools,
       maxRetries: 2,
       maxOutputTokens: 8000, // Prevent runaway generation; must complete before 60s Vercel timeout
-      onFinish: ({ text, finishReason }) => {
+      onFinish: ({ finishReason }) => {
         console.log(`[CHAT COMPLETE] Reason: ${finishReason}`);
-
-        // CRITICAL: Fire-and-forget (do NOT await).
-        // If we await here, Vercel waits for Convex response even after HTTP response is sent.
-        // This causes function to hang and hit the 60s Vercel timeout.
-        // Instead, fire the mutation and let it complete in the background.
-        convex
-          .mutation(api.messages.storeMessage, {
-            chatId: resolvedChatId,
-            content: text,
-            role: "assistant",
-            gptId
-          })
-          .catch((error) => {
-            // Silent catch to prevent unhandled promise rejection
-            console.error("[ASSISTANT MESSAGE STORE FAILED]", error);
-          });
       }
     });
 
