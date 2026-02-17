@@ -9,6 +9,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { resolveGptFromDb } from "@/lib/resolveGpt";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { generateChatTitle } from "@/lib/chat-title";
 import {
   summarizeSystemPrompt,
   shouldUseRAG,
@@ -38,6 +39,8 @@ export async function POST(req: Request) {
       userId,
       systemPrompt: userSystemPrompt
     } = await req.json();
+
+    const isNewChat = !chatId;
 
     if (!messages || !Array.isArray(messages)) {
       return new Response(
@@ -189,30 +192,36 @@ export async function POST(req: Request) {
     }
 
     // --- OPTIMIZE: Conditional RAG - only enable if user query semantically requires documents ---
+    const extractMessageText = (message: any): string => {
+      if (!message) return "";
+
+      if (typeof message.content === "string") {
+        return message.content;
+      }
+
+      if (Array.isArray(message.content)) {
+        return message.content
+          .filter((part: any) => part.type === "text")
+          .map((part: any) => part.text)
+          .join(" ");
+      }
+
+      if (Array.isArray(message.parts)) {
+        return message.parts
+          .filter((part: any) => part.type === "text")
+          .map((part: any) => part.text)
+          .join(" ");
+      }
+
+      return "";
+    };
+
     const latestUserMessage = messages
       .slice()
       .reverse()
       .find((m: any) => m.role === "user");
 
-    let userMessageText = "";
-
-    if (latestUserMessage) {
-      // Handle different message formats
-      if (typeof latestUserMessage.content === "string") {
-        userMessageText = latestUserMessage.content;
-      } else if (Array.isArray(latestUserMessage.content)) {
-        userMessageText = latestUserMessage.content
-          .filter((part: any) => part.type === "text")
-          .map((part: any) => part.text)
-          .join(" ");
-      } else if (Array.isArray(latestUserMessage.parts)) {
-        // Handle "parts" format (used by AI SDK messages)
-        userMessageText = latestUserMessage.parts
-          .filter((part: any) => part.type === "text")
-          .map((part: any) => part.text)
-          .join(" ");
-      }
-    }
+    const userMessageText = extractMessageText(latestUserMessage);
 
     const userMessageWordCount = userMessageText
       ? userMessageText.trim().split(/\s+/).length
@@ -296,6 +305,26 @@ export async function POST(req: Request) {
     Promise.all(userMessagePromises).catch((error) => {
       console.error("[USER MESSAGE BATCH STORE FAILED]", error);
     });
+
+    // --- Generate chat title asynchronously (only once per chat) ---
+    if (isNewChat && resolvedChatId) {
+      const firstUserMessage = messages.find((m: any) => m.role === "user");
+      const firstUserMessageText = extractMessageText(firstUserMessage);
+
+      if (firstUserMessageText) {
+        void generateChatTitle(firstUserMessageText, openaiClient("gpt-5-mini"))
+          .then((title) => {
+            if (!title || title === "New GPT Chat") return;
+            return convex.mutation(api.chats.updateChatTitle, {
+              id: resolvedChatId,
+              title
+            });
+          })
+          .catch((error) => {
+            console.error("[CHAT TITLE] Update failed", error);
+          });
+      }
+    }
 
     // --- Debug logging ---
     console.log("[GPT CONFIG - Final]", {
