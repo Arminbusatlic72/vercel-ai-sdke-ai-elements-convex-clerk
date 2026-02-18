@@ -191,16 +191,94 @@ const MessageItem = memo(
     handleCopy: (text: string) => void;
     handleRetry: () => void;
   }) => {
-    const fullText = useMemo(
-      () => extractMessageText(message.parts),
-      [message.parts]
-    );
+    const fullText = useMemo(() => {
+      const fromParts = extractMessageText(message.parts);
+      if (fromParts) return fromParts;
+      if (typeof message.content === "string") return message.content;
+      if (Array.isArray(message.content)) {
+        return message.content
+          .filter((part: any) => part.type === "text")
+          .map((part: any) => part.text)
+          .join("\n")
+          .trim();
+      }
+      return "";
+    }, [message.parts, message.content]);
 
-    const processedText = useMemo(
-      () =>
-        message.role === "user" ? processMessageContent(fullText) : fullText,
-      [fullText, message.role]
-    );
+    const normalizedAssistantText = useMemo(() => {
+      const trimmed = fullText.trim();
+      const fenceMatch = trimmed.match(/^```(\w+)?\n([\s\S]*?)\n```$/);
+      if (!fenceMatch) return fullText;
+
+      const fenceLang = fenceMatch[1] || "";
+      const fenceBody = fenceMatch[2]?.trim() || "";
+
+      // Always unwrap txt/text/plaintext fences - they're just prose, not code
+      const proseLanguages = ["txt", "text", "plaintext", "plain"];
+      if (proseLanguages.includes(fenceLang.toLowerCase())) {
+        return fenceBody;
+      }
+
+      const looksLikeCode =
+        /\b(import|export|const|let|var|function|class|interface|type)\b/.test(
+          fenceBody
+        ) ||
+        /[{};=<>]/.test(fenceBody) ||
+        /\(.*\)\s*=>/.test(fenceBody);
+
+      if (fenceLang && !looksLikeCode) {
+        return fenceBody;
+      }
+
+      if (fenceLang || looksLikeCode) {
+        return fullText;
+      }
+
+      return fenceBody;
+    }, [fullText]);
+
+    const assistantWithCodeFence = useMemo(() => {
+      const text = normalizedAssistantText.trim();
+      if (!text) return normalizedAssistantText;
+      if (text.startsWith("```")) return normalizedAssistantText;
+
+      const lines = text.split("\n").map((line) => line.trim());
+      const nonEmptyLines = lines.filter(Boolean);
+      const codeLikeLines = nonEmptyLines.filter((line) =>
+        /\b(import|export|const|let|var|function|class|interface|type)\b/.test(
+          line
+        ) ||
+        /[{};=<>]/.test(line) ||
+        /\(.*\)\s*=>/.test(line) ||
+        /\breturn\b/.test(line)
+      );
+      const hasMarkdownStructure = nonEmptyLines.some(
+        (line) =>
+          /^(#{1,6})\s+/.test(line) ||
+          /^[-*+]\s+/.test(line) ||
+          /^\d+\.\s+/.test(line)
+      );
+
+      const codeRatio =
+        nonEmptyLines.length > 0
+          ? codeLikeLines.length / nonEmptyLines.length
+          : 0;
+
+      if (hasMarkdownStructure || codeLikeLines.length < 2 || codeRatio < 0.6) {
+        return normalizedAssistantText;
+      }
+
+      return `\
+\
+\`\`\`ts\n${text}\n\`\`\``.trim();
+    }, [normalizedAssistantText]);
+
+    const processedText = useMemo(() => {
+      if (message.role === "user") {
+        return processMessageContent(fullText);
+      }
+      return assistantWithCodeFence;
+    }, [fullText, normalizedAssistantText, assistantWithCodeFence, message.role]);
 
     if (!fullText) return null;
 
@@ -213,6 +291,7 @@ const MessageItem = memo(
               [&_code]:text-sm [&_code]:font-mono [&_code]:before:content-none [&_code]:after:content-none
               [&_p]:leading-7 [&_p]:mb-4 [&_p:last-child]:mb-0
               [&_ul]:my-4 [&_ol]:my-4 [&_li]:my-1
+              [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-6 [&_ol]:pl-6
               [&_h1]:text-2xl [&_h2]:text-xl [&_h3]:text-lg
               [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold
               [&_h1]:mt-6 [&_h2]:mt-5 [&_h3]:mt-4
@@ -243,6 +322,16 @@ const MessageItem = memo(
         )}
       </Message>
     );
+  },
+  (prevProps, nextProps) => {
+    if (prevProps.message === nextProps.message) return true;
+    if (prevProps.handleCopy !== nextProps.handleCopy) return false;
+    if (prevProps.handleRetry !== nextProps.handleRetry) return false;
+    if (prevProps.message?.id !== nextProps.message?.id) return false;
+    if (prevProps.message?.role !== nextProps.message?.role) return false;
+    if (prevProps.message?.parts !== nextProps.message?.parts) return false;
+    if (prevProps.message?.content !== nextProps.message?.content) return false;
+    return true;
   }
 );
 
@@ -276,6 +365,7 @@ const InitialMessageItem = memo(
               [&_code]:text-sm [&_code]:font-mono [&_code]:before:content-none [&_code]:after:content-none
               [&_p]:leading-7 [&_p]:mb-4 [&_p:last-child]:mb-0
               [&_ul]:my-4 [&_ol]:my-4 [&_li]:my-1
+              [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-6 [&_ol]:pl-6
               [&_h1]:text-2xl [&_h2]:text-xl [&_h3]:text-lg
               [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold
               [&_h1]:mt-6 [&_h2]:mt-5 [&_h3]:mt-4
@@ -343,7 +433,15 @@ export const AiMessageList = memo(function AiMessageList({
   handleRetry,
   status
 }: AiMessageListProps) {
-  const showStatusMessage = status === "submitted" || status === "streaming";
+  const isStreaming = status === "submitted" || status === "streaming";
+  const showStatusMessage = isStreaming;
+  const stableMessages = useMemo(
+    () => (isStreaming ? displayMessages.slice(0, -1) : displayMessages),
+    [displayMessages, isStreaming]
+  );
+  const streamingMessage = isStreaming
+    ? displayMessages[displayMessages.length - 1]
+    : undefined;
 
   return (
     <>
@@ -354,7 +452,7 @@ export const AiMessageList = memo(function AiMessageList({
         ))}
 
         {/* Real messages */}
-        {displayMessages.map((message) => (
+        {stableMessages.map((message) => (
           <MessageItem
             key={message.id}
             message={message}
@@ -362,6 +460,15 @@ export const AiMessageList = memo(function AiMessageList({
             handleRetry={handleRetry}
           />
         ))}
+
+        {streamingMessage && (
+          <MessageItem
+            key={streamingMessage.id ?? "streaming-message"}
+            message={streamingMessage}
+            handleCopy={handleCopy}
+            handleRetry={handleRetry}
+          />
+        )}
 
         {/* Status indicator */}
         {showStatusMessage && <StatusMessage status={status} />}

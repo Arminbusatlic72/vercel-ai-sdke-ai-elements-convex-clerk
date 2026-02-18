@@ -5,6 +5,7 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { extractMessageText } from "@/lib/message";
+import { preprocessCodeInput } from "@/lib/code-detector";
 
 export interface ModelConfig {
   name: string;
@@ -217,11 +218,17 @@ export function useAiChat({
     async (msg: { text: string; files?: any[] }) => {
       if (!msg.text.trim() && !msg.files?.length) return;
 
+      // Preprocess text to auto-wrap pasted code in fences
+      const codeDetection = preprocessCodeInput(msg.text);
+      const processedText = codeDetection.isCode
+        ? codeDetection.wrappedText!
+        : msg.text;
+
       let activeChatId = chatId;
 
       if (!activeChatId) {
         const title =
-          msg.text.slice(0, 50) + (msg.text.length > 50 ? "..." : "");
+          processedText.slice(0, 50) + (processedText.length > 50 ? "..." : "");
 
         const newId = await createChat({
           title,
@@ -254,7 +261,7 @@ export function useAiChat({
         : modelMap.get(model)?.provider || "google";
 
       sendMessage(
-        { text: msg.text, files: msg.files },
+        { text: processedText, files: msg.files },
         {
           body: {
             chatId: activeChatId,

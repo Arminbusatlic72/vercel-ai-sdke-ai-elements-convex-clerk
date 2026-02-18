@@ -155,6 +155,9 @@ export async function POST(req: Request) {
       combinedSystemPrompt = `${userSystemPrompt}\n\n${combinedSystemPrompt}`;
     }
 
+    combinedSystemPrompt +=
+      "\n\nFormatting rules: Use Markdown. When you include code, wrap it in fenced code blocks with a language tag (e.g., ```ts). Do not wrap the entire response in a code block.";
+
     // --- OPTIMIZE: Compress system prompt (40% token reduction) ---
     const originalPromptLength = combinedSystemPrompt.length;
     combinedSystemPrompt = summarizeSystemPrompt(combinedSystemPrompt);
