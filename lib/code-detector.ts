@@ -77,7 +77,7 @@ function hasCodePatterns(text: string): boolean {
     // Multiple consecutive lines with semicolons
     /;[\s\n]+\w+.*?;/,
     // Class definitions
-    /^class\s+\w+/m,
+    /^class\s+\w+/m
   ];
 
   return codeIndicators.some((pattern) => pattern.test(text));
@@ -94,7 +94,7 @@ function getCodeRatio(text: string): number {
     /^\s*<\/\w+>/,
     /^\s*\w+\([^)]*\)\s*\{/,
     /^\s*\}[;,]?\s*$/,
-    /;\s*$/,
+    /;\s*$/
   ];
 
   const codeLines = lines.filter((line) =>
@@ -139,6 +139,6 @@ export function preprocessCodeInput(text: string): CodeDetectionResult {
   return {
     isCode: true,
     language,
-    wrappedText,
+    wrappedText
   };
 }

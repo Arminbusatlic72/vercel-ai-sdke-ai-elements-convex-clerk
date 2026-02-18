@@ -244,13 +244,14 @@ const MessageItem = memo(
 
       const lines = text.split("\n").map((line) => line.trim());
       const nonEmptyLines = lines.filter(Boolean);
-      const codeLikeLines = nonEmptyLines.filter((line) =>
-        /\b(import|export|const|let|var|function|class|interface|type)\b/.test(
-          line
-        ) ||
-        /[{};=<>]/.test(line) ||
-        /\(.*\)\s*=>/.test(line) ||
-        /\breturn\b/.test(line)
+      const codeLikeLines = nonEmptyLines.filter(
+        (line) =>
+          /\b(import|export|const|let|var|function|class|interface|type)\b/.test(
+            line
+          ) ||
+          /[{};=<>]/.test(line) ||
+          /\(.*\)\s*=>/.test(line) ||
+          /\breturn\b/.test(line)
       );
       const hasMarkdownStructure = nonEmptyLines.some(
         (line) =>
@@ -278,7 +279,12 @@ const MessageItem = memo(
         return processMessageContent(fullText);
       }
       return assistantWithCodeFence;
-    }, [fullText, normalizedAssistantText, assistantWithCodeFence, message.role]);
+    }, [
+      fullText,
+      normalizedAssistantText,
+      assistantWithCodeFence,
+      message.role
+    ]);
 
     if (!fullText) return null;
 
