@@ -14,7 +14,7 @@ interface CodeDetectionResult {
 function detectLanguage(text: string): string {
   // TypeScript/TSX indicators
   if (
-    /interface\s+\w+|type\s+\w+\s*=|<\w+.*?>/s.test(text) &&
+    /interface\s+\w+|type\s+\w+\s*=|<\w+.*?>/.test(text) &&
     (text.includes("import") || text.includes("export"))
   ) {
     return text.includes("<") && text.includes(">") ? "tsx" : "ts";
@@ -73,7 +73,7 @@ function hasCodePatterns(text: string): boolean {
     // TypeScript interfaces/types
     /^(interface|type)\s+\w+/m,
     // Common code structures
-    /\{\s*\w+:\s*\w+.*?\}/s,
+    /\{\s*\w+:\s*\w+.*?\}/,
     // Multiple consecutive lines with semicolons
     /;[\s\n]+\w+.*?;/,
     // Class definitions

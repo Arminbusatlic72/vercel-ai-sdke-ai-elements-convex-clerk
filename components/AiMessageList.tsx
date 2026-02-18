@@ -242,10 +242,10 @@ const MessageItem = memo(
       if (!text) return normalizedAssistantText;
       if (text.startsWith("```")) return normalizedAssistantText;
 
-      const lines = text.split("\n").map((line) => line.trim());
+      const lines = text.split("\n").map((line: string) => line.trim());
       const nonEmptyLines = lines.filter(Boolean);
       const codeLikeLines = nonEmptyLines.filter(
-        (line) =>
+        (line: string) =>
           /\b(import|export|const|let|var|function|class|interface|type)\b/.test(
             line
           ) ||
@@ -254,7 +254,7 @@ const MessageItem = memo(
           /\breturn\b/.test(line)
       );
       const hasMarkdownStructure = nonEmptyLines.some(
-        (line) =>
+        (line: string) =>
           /^(#{1,6})\s+/.test(line) ||
           /^[-*+]\s+/.test(line) ||
           /^\d+\.\s+/.test(line)
