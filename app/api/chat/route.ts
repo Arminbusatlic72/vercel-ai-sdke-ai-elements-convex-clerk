@@ -24,6 +24,7 @@ const NORMAL_TURN_MAX_OUTPUT_TOKENS = 1200;
 const SUMMARY_TURN_THRESHOLD = 8;
 const SUMMARY_RECENT_WINDOW = 4;
 const SUMMARY_MAX_CACHE_AGE_MS = 10 * 60 * 1000;
+const IDEMPOTENCY_WINDOW_MS = 10_000;
 
 let generalSettingsCache:
   | {
@@ -48,6 +49,8 @@ const conversationSummaryCache = new Map<
     basedOnCount: number;
   }
 >();
+
+const requestIdempotencyStore = new Map<string, { expiresAt: number }>();
 
 async function getCachedGeneralSettings() {
   const now = Date.now();
@@ -233,6 +236,15 @@ function getCachedConversationSummary(chatId?: string, messageCount?: number) {
   return item.summary;
 }
 
+function cleanExpiredIdempotencyKeys() {
+  const now = Date.now();
+  for (const [key, value] of requestIdempotencyStore.entries()) {
+    if (value.expiresAt <= now) {
+      requestIdempotencyStore.delete(key);
+    }
+  }
+}
+
 function isSimpleGreetingMessage(text: string) {
   const normalized = text.trim().toLowerCase();
   if (!normalized) return false;
@@ -262,6 +274,21 @@ function isLowComplexityMessage(text: string) {
 export async function POST(req: Request) {
   try {
     const requestStartedAt = Date.now();
+
+    const idempotencyKey = req.headers.get("x-idempotency-key");
+    if (idempotencyKey) {
+      cleanExpiredIdempotencyKeys();
+      if (requestIdempotencyStore.has(idempotencyKey)) {
+        return new Response(JSON.stringify({ error: "Duplicate request" }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      requestIdempotencyStore.set(idempotencyKey, {
+        expiresAt: requestStartedAt + IDEMPOTENCY_WINDOW_MS
+      });
+    }
 
     // pre-stream tasks
     // Keep this section minimal so first-token latency is as low as possible.

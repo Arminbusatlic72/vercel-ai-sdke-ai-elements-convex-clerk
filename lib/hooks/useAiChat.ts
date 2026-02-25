@@ -49,6 +49,8 @@ export function useAiChat({
   const conversationRef = useRef<HTMLDivElement>(null);
   const savedMessageKeys = useRef(new Set<string>());
   const isSavingRef = useRef(false);
+  const submittingRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // --- Convex Mutations ---
   const createChat = useMutation(api.chats.createChat);
@@ -75,6 +77,33 @@ export function useAiChat({
     }, 0);
     return () => clearTimeout(id);
   }, []);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+      submittingRef.current = false;
+    };
+  }, []);
+
+  const hashString = useCallback((value: string) => {
+    let hash = 0;
+    for (let i = 0; i < value.length; i++) {
+      const chr = value.charCodeAt(i);
+      hash = (hash << 5) - hash + chr;
+      hash |= 0;
+    }
+    return Math.abs(hash).toString(36);
+  }, []);
+
+  const createIdempotencyKey = useCallback(
+    (activeChatId: Id<"chats"> | undefined, text: string) => {
+      const timestampBucket = Math.floor(Date.now() / 10_000);
+      const raw = `${activeChatId ?? "new-chat"}:${text.trim()}:${timestampBucket}`;
+      return `chat_${hashString(raw)}`;
+    },
+    [hashString]
+  );
 
   // --- Hydrate initial messages once on mount ---
   useEffect(() => {
@@ -217,72 +246,104 @@ export function useAiChat({
   const handleSubmit = useCallback(
     async (msg: { text: string; files?: any[] }) => {
       if (!msg.text.trim() && !msg.files?.length) return;
-
-      // Preprocess text to auto-wrap pasted code in fences
-      const codeDetection = preprocessCodeInput(msg.text);
-      const processedText = codeDetection.isCode
-        ? codeDetection.wrappedText!
-        : msg.text;
-
-      let activeChatId = chatId;
-
-      if (!activeChatId) {
-        const title =
-          processedText.slice(0, 50) + (processedText.length > 50 ? "..." : "");
-
-        const newId = await createChat({
-          title,
-          projectId: projectId ?? undefined,
-          gptId: gptId ?? undefined,
-          createdAt: Date.now()
-        });
-
-        activeChatId = newId;
-        setChatId(activeChatId);
-
-        // Build URL
-        let chatUrl = "/gpt5";
-        if (gptId) {
-          chatUrl += `/${gptId}`;
-          if (projectId) {
-            chatUrl += `/project/${projectId}`;
-          }
-          chatUrl += `/chat/${activeChatId}`;
-        } else if (projectId) {
-          chatUrl = `/gpt5/project/${projectId}?chatId=${activeChatId}`;
-        } else {
-          chatUrl = `/gpt5/${activeChatId}`;
-        }
-        window.history.replaceState(null, "", chatUrl);
+      if (
+        submittingRef.current ||
+        status === "streaming" ||
+        status === "submitted"
+      ) {
+        return;
       }
 
-      const provider = webSearch
-        ? "google"
-        : modelMap.get(model)?.provider || "google";
+      submittingRef.current = true;
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = new AbortController();
 
-      sendMessage(
-        { text: processedText, files: msg.files },
-        {
-          body: {
-            chatId: activeChatId,
-            gptId,
-            model,
-            provider,
-            webSearch
+      try {
+        // Preprocess text to auto-wrap pasted code in fences
+        const codeDetection = preprocessCodeInput(msg.text);
+        const processedText = codeDetection.isCode
+          ? codeDetection.wrappedText!
+          : msg.text;
+
+        let activeChatId = chatId;
+
+        if (!activeChatId) {
+          const title =
+            processedText.slice(0, 50) +
+            (processedText.length > 50 ? "..." : "");
+
+          const newId = await createChat({
+            title,
+            projectId: projectId ?? undefined,
+            gptId: gptId ?? undefined,
+            createdAt: Date.now()
+          });
+
+          activeChatId = newId;
+          setChatId(activeChatId);
+
+          // Build URL
+          let chatUrl = "/gpt5";
+          if (gptId) {
+            chatUrl += `/${gptId}`;
+            if (projectId) {
+              chatUrl += `/project/${projectId}`;
+            }
+            chatUrl += `/chat/${activeChatId}`;
+          } else if (projectId) {
+            chatUrl = `/gpt5/project/${projectId}?chatId=${activeChatId}`;
+          } else {
+            chatUrl = `/gpt5/${activeChatId}`;
           }
+          window.history.replaceState(null, "", chatUrl);
         }
-      );
 
-      setInput("");
-      setAttachments([]);
+        const provider = webSearch
+          ? "google"
+          : modelMap.get(model)?.provider || "google";
+
+        const idempotencyKey = createIdempotencyKey(
+          activeChatId,
+          processedText
+        );
+
+        await sendMessage(
+          { text: processedText, files: msg.files },
+          {
+            body: {
+              chatId: activeChatId,
+              gptId,
+              model,
+              provider,
+              webSearch
+            },
+            headers: {
+              "x-idempotency-key": idempotencyKey
+            }
+          }
+        );
+
+        setInput("");
+        setAttachments([]);
+      } catch (error) {
+        if ((error as any)?.name === "AbortError") {
+          return;
+        }
+        console.error("[CHAT SUBMIT ERROR]", error);
+      } finally {
+        submittingRef.current = false;
+        abortControllerRef.current = null;
+      }
     },
     [
       chatId,
+      createIdempotencyKey,
       createChat,
       model,
       modelMap,
       projectId,
       sendMessage,
+      status,
       webSearch,
       gptId
     ]
@@ -291,18 +352,42 @@ export function useAiChat({
   const handleRetry = useCallback(() => {
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     if (!lastUser) return;
+    if (
+      submittingRef.current ||
+      status === "streaming" ||
+      status === "submitted"
+    ) {
+      return;
+    }
     const provider = modelMap.get(model)?.provider || "google";
+    const retryText = extractMessageText(
+      lastUser.parts || [
+        { type: "text", text: (lastUser as any).content || "" }
+      ]
+    );
+    const idempotencyKey = createIdempotencyKey(chatId, retryText);
     sendMessage(
       {
-        text: extractMessageText(
-          lastUser.parts || [
-            { type: "text", text: (lastUser as any).content || "" }
-          ]
-        )
+        text: retryText
       },
-      { body: { chatId, gptId, model, provider, webSearch } }
+      {
+        body: { chatId, gptId, model, provider, webSearch },
+        headers: {
+          "x-idempotency-key": idempotencyKey
+        }
+      }
     );
-  }, [messages, sendMessage, chatId, gptId, model, modelMap, webSearch]);
+  }, [
+    messages,
+    sendMessage,
+    chatId,
+    gptId,
+    model,
+    modelMap,
+    webSearch,
+    status,
+    createIdempotencyKey
+  ]);
 
   return {
     chatId,
