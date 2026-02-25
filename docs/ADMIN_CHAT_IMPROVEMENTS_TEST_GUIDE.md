@@ -32,36 +32,44 @@ This guide helps an admin validate the recent `/api/chat` improvements end-to-en
 ### A. Simple greeting (fast-path)
 
 Prompt:
+
 - `hello`
 
 Expected:
+
 - Response starts very quickly.
 - Logs should show low-complexity/greeting behavior and fast first chunk.
 
 ### B. Low-complexity question
 
 Prompt:
+
 - `what is 2+2`
 
 Expected:
+
 - Very low first-token latency.
 - `effectiveModel` may downshift for speed.
 
 ### C. Complex non-RAG question
 
 Prompt:
+
 - `Compare monolithic and microservices architecture for a SaaS scaling from 10k to 1M users.`
 
 Expected:
+
 - Better reasoning quality than simple path.
 - Admin model intent should be preserved when not in tool path.
 
 ### D. RAG question (document-grounded)
 
 Prompt:
+
 - `According to the uploaded document, what are Armin's skills?`
 
 Expected:
+
 - `useRAG: true` in logs.
 - Final user-facing answer appears in UI (not empty).
 - No `AI_APICallError` in server logs.
@@ -76,6 +84,7 @@ Expected:
 2. Rapidly press Enter 3-5 times or click submit repeatedly.
 
 Expected:
+
 - Only one effective send while request is in-flight.
 - No duplicated assistant responses for the same submit.
 
@@ -85,6 +94,7 @@ Expected:
 2. You can verify with logs/network panel.
 
 Expected:
+
 - First request: `200`
 - Duplicate request: `409` with `Duplicate request`
 
@@ -93,17 +103,20 @@ Expected:
 ## 4) Tail-Latency Validation
 
 Use these prompts in order in one chat:
+
 1. `hello`
 2. `what is 2+2`
 3. `According to the uploaded document, summarize Armin's top 5 skills with short evidence.`
 
 Track in logs:
+
 - `[PERF] pre-stream`
 - `[PERF] stream-start`
 - `[PERF] first-chunk`
 - `[PERF] finish`
 
 Target behavior:
+
 - Pre-stream should stay low.
 - First chunk should be much lower than old baseline.
 - RAG turns should complete without empty output.
@@ -116,6 +129,7 @@ Target behavior:
 2. Ask a follow-up requiring continuity.
 
 Expected:
+
 - Older context gets summarized (cache path active).
 - Recent turns remain relevant.
 - No noticeable regression in answer quality.
@@ -147,6 +161,7 @@ Current server idempotency store is in-memory. On multi-instance serverless depl
 ## 8) Optional Monitoring Fields to Watch
 
 In server logs:
+
 - `effectiveModel`
 - `resolvedModel`
 - `preservedAdminModel`
