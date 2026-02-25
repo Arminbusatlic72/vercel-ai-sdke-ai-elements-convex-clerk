@@ -5,6 +5,12 @@ import { NextResponse } from "next/server";
 const isAdminRoute = createRouteMatcher(["/admin(.*)"]);
 
 export default clerkMiddleware(async (auth, req) => {
+  // Performance fast-path: chat API uses its own server-side logic,
+  // so avoid middleware auth resolution overhead on every streamed request.
+  if (req.nextUrl.pathname.startsWith("/api/chat")) {
+    return NextResponse.next();
+  }
+
   const { userId } = await auth();
 
   // Protect all routes starting with `/admin`

@@ -1,21 +1,11 @@
-import {
-  streamText,
-  convertToModelMessages,
-  type LanguageModel,
-  type ToolSet
-} from "ai";
+import { streamText, type LanguageModel, type ToolSet } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
-import { resolveGptFromDb } from "@/lib/resolveGpt";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { shouldUseRAG } from "@/lib/ai-optimization";
 import { generateChatTitle } from "@/lib/chat-title";
-import {
-  summarizeSystemPrompt,
-  shouldUseRAG,
-  trimConversationHistory,
-  estimateRequestTokens
-} from "@/lib/ai-optimization";
+import { buildDeterministicConversationSummary } from "@/lib/conversation-summary";
 
 export const runtime = "nodejs";
 export const maxDuration = 60; // ✅ Increase for file processing
@@ -26,9 +16,257 @@ const google = createGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY!
 });
 
+const SETTINGS_CACHE_TTL_MS = 30_000;
+const RAG_MAX_RESULTS = 4;
+const TOOL_TURN_MAX_OUTPUT_TOKENS = 900;
+const COMPLEX_TURN_MAX_OUTPUT_TOKENS = 1000;
+const NORMAL_TURN_MAX_OUTPUT_TOKENS = 1200;
+const SUMMARY_TURN_THRESHOLD = 8;
+const SUMMARY_RECENT_WINDOW = 4;
+const SUMMARY_MAX_CACHE_AGE_MS = 10 * 60 * 1000;
+
+let generalSettingsCache:
+  | {
+      value: any;
+      expiresAt: number;
+    }
+  | undefined;
+
+const gptWithDefaultsCache = new Map<
+  string,
+  {
+    value: any;
+    expiresAt: number;
+  }
+>();
+
+const conversationSummaryCache = new Map<
+  string,
+  {
+    summary: string;
+    updatedAt: number;
+    basedOnCount: number;
+  }
+>();
+
+async function getCachedGeneralSettings() {
+  const now = Date.now();
+  if (generalSettingsCache && generalSettingsCache.expiresAt > now) {
+    return generalSettingsCache.value;
+  }
+
+  const value = await convex.query(api.gpts.getGeneralSettings, {});
+  generalSettingsCache = {
+    value,
+    expiresAt: now + SETTINGS_CACHE_TTL_MS
+  };
+  return value;
+}
+
+async function getCachedGptWithDefaults(gptId: string) {
+  const now = Date.now();
+  const cached = gptWithDefaultsCache.get(gptId);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
+  const value = await convex.query(api.gpts.getGptWithDefaults, { gptId });
+  gptWithDefaultsCache.set(gptId, {
+    value,
+    expiresAt: now + SETTINGS_CACHE_TTL_MS
+  });
+  return value;
+}
+
+function findLatestUserMessage(messages: any[]) {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    if (messages[index]?.role === "user") {
+      return messages[index];
+    }
+  }
+  return undefined;
+}
+
+function getRecentMessagesWindow(messages: any[], maxMessages = 10) {
+  if (!Array.isArray(messages) || messages.length <= maxMessages) {
+    return messages;
+  }
+
+  const recent = messages.slice(-maxMessages);
+  const hasUserMessage = recent.some((message) => message?.role === "user");
+  if (hasUserMessage) {
+    return recent;
+  }
+
+  const latestUserMessage = findLatestUserMessage(messages);
+  if (!latestUserMessage) {
+    return recent;
+  }
+
+  return [...recent.slice(1), latestUserMessage];
+}
+
+function getMinimalRollingWindow(messages: any[]) {
+  return getRecentMessagesWindow(messages, SUMMARY_RECENT_WINDOW);
+}
+
+function normalizeMessagesForModel(messages: any[]) {
+  return messages
+    .map((message) => {
+      const role = message?.role;
+      if (role !== "user" && role !== "assistant" && role !== "system") {
+        return null;
+      }
+
+      const content = extractMessageText(message);
+      if (!content) return null;
+
+      return {
+        role,
+        content
+      };
+    })
+    .filter(Boolean) as Array<{
+    role: "user" | "assistant" | "system";
+    content: string;
+  }>;
+}
+
+function extractMessageText(message: any): string {
+  if (!message) return "";
+
+  if (typeof message.content === "string") {
+    return message.content;
+  }
+
+  if (Array.isArray(message.content)) {
+    return message.content
+      .filter((part: any) => part.type === "text")
+      .map((part: any) => part.text)
+      .join(" ");
+  }
+
+  if (Array.isArray(message.parts)) {
+    return message.parts
+      .filter((part: any) => part.type === "text")
+      .map((part: any) => part.text)
+      .join(" ");
+  }
+
+  return "";
+}
+
+function buildMinimalSystemPrompt({
+  userSystemPrompt,
+  basePrompt,
+  gptId,
+  hasWebSearch,
+  hasFileSearch,
+  isSimpleGreeting,
+  hasToolsEnabled,
+  conversationSummary
+}: {
+  userSystemPrompt?: string;
+  basePrompt: string;
+  gptId?: string;
+  hasWebSearch: boolean;
+  hasFileSearch: boolean;
+  isSimpleGreeting: boolean;
+  hasToolsEnabled: boolean;
+  conversationSummary?: string;
+}) {
+  let systemPrompt = "";
+
+  if (userSystemPrompt) {
+    systemPrompt += `${userSystemPrompt}\n\n`;
+  }
+
+  if (gptId) {
+    systemPrompt += `[ACTIVE GPT: ${gptId}]\n`;
+  }
+
+  systemPrompt += `${basePrompt}\n\n`;
+  systemPrompt +=
+    "Formatting: respond in Markdown. Use fenced code blocks with language tags when returning code.";
+
+  if (hasWebSearch) {
+    systemPrompt += "\nTool: web_search is available when needed.";
+  }
+
+  if (hasFileSearch) {
+    systemPrompt +=
+      "\nTool: file_search is available for uploaded documents when relevant.";
+  }
+
+  if (isSimpleGreeting) {
+    systemPrompt +=
+      "\nLatency mode: for simple greetings, respond immediately with one short friendly sentence and do not use tools.";
+  }
+
+  if (hasToolsEnabled) {
+    systemPrompt +=
+      "\nPerformance mode: provide a concise direct answer first, then brief supporting points. After any tool usage, always return a final user-facing text answer.";
+  }
+
+  if (conversationSummary) {
+    systemPrompt += `\n\n${conversationSummary}`;
+  }
+
+  return systemPrompt;
+}
+
+function getCachedConversationSummary(chatId?: string, messageCount?: number) {
+  if (!chatId) return "";
+  const item = conversationSummaryCache.get(chatId);
+  if (!item) return "";
+
+  if (Date.now() - item.updatedAt > SUMMARY_MAX_CACHE_AGE_MS) {
+    conversationSummaryCache.delete(chatId);
+    return "";
+  }
+
+  if (typeof messageCount === "number" && messageCount < item.basedOnCount) {
+    conversationSummaryCache.delete(chatId);
+    return "";
+  }
+
+  return item.summary;
+}
+
+function isSimpleGreetingMessage(text: string) {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+
+  return /^(hi|hello|hey|yo|hola|good\s+morning|good\s+afternoon|good\s+evening)[!.?\s]*$/.test(
+    normalized
+  );
+}
+
+function isLowComplexityMessage(text: string) {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+
+  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+  const isVeryShort = wordCount <= 8;
+
+  const isSimpleMath =
+    /^(what\s+is\s+)?\d+\s*[+\-*/]\s*\d+\??$/.test(normalized) ||
+    /^(\d+\s*[+\-*/]\s*\d+)$/.test(normalized);
+
+  const isShortDefinition =
+    /^(what\s+is\s+\w+\??|define\s+\w+\??|who\s+is\s+\w+\??)$/.test(normalized);
+
+  return isSimpleMath || (isVeryShort && isShortDefinition);
+}
+
 export async function POST(req: Request) {
   try {
-    // ✅ Parse request body as JSON (AI SDK handles file conversion)
+    const requestStartedAt = Date.now();
+
+    // pre-stream tasks
+    // Keep this section minimal so first-token latency is as low as possible.
+
+    // 1) Parse request payload
     const {
       messages,
       chatId,
@@ -36,11 +274,8 @@ export async function POST(req: Request) {
       model: userSelectedModel,
       webSearch,
       provider,
-      userId,
       systemPrompt: userSystemPrompt
     } = await req.json();
-
-    const isNewChat = !chatId;
 
     if (!messages || !Array.isArray(messages)) {
       return new Response(
@@ -49,94 +284,28 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log("[API] Received request:", {
-      messageCount: messages.length,
-      gptId,
-      model: userSelectedModel,
-      hasFiles: messages.some(
-        (m: any) =>
-          m.experimental_attachments && m.experimental_attachments.length > 0
-      )
-    });
-
-    // --- Ensure chat exists ---
-    let resolvedChatId = chatId;
-    if (!resolvedChatId) {
-      if (!userId)
-        return new Response(JSON.stringify({ error: "userId is required" }), {
-          status: 400
-        });
-
-      try {
-        const newChat = await convex.mutation(api.chats.createChat, {
-          title: "New GPT Chat",
-          projectId: undefined,
-          createdAt: Date.now()
-        });
-
-        resolvedChatId = (newChat as any)._id;
-      } catch (error) {
-        console.error("Error creating chat:", error);
-        return new Response(
-          JSON.stringify({ error: "Failed to create chat" }),
-          { status: 500 }
-        );
-      }
-    }
-
-    // --- Get General Settings ---
-    let generalSettings;
-    try {
-      generalSettings = await convex.query(api.gpts.getGeneralSettings, {});
-    } catch (error) {
-      console.error("Error fetching general settings:", error);
-      generalSettings = null;
-    }
-
-    // --- Resolve GPT from DB with General Settings ---
+    // Resolve GPT config with one Convex call for GPT chats
     let resolvedModel: string = "gpt-4o-mini";
     let apiKey: string | undefined;
     let vectorStoreId: string | undefined;
     let ragTriggerKeywords: string[] | undefined;
-    let combinedSystemPrompt = "";
+    let baseSystemPrompt = "You are a helpful assistant.";
 
     if (gptId) {
-      const dbGpt = await resolveGptFromDb(gptId);
+      const gptWithDefaults = await getCachedGptWithDefaults(gptId);
 
-      if (dbGpt) {
-        const generalPrompt = generalSettings?.defaultSystemPrompt || "";
-        const gptSpecificPrompt = dbGpt.systemPrompt || "";
-
-        if (generalPrompt && gptSpecificPrompt) {
-          combinedSystemPrompt = `${generalPrompt}\n\n[ACTIVE GPT: ${gptId}]\n\n${gptSpecificPrompt}`;
-        } else if (generalPrompt) {
-          combinedSystemPrompt = generalPrompt;
-        } else if (gptSpecificPrompt) {
-          combinedSystemPrompt = gptSpecificPrompt;
-        } else {
-          combinedSystemPrompt = "You are a helpful assistant.";
-        }
-
-        apiKey = dbGpt.apiKey || generalSettings?.defaultApiKey;
-        vectorStoreId = dbGpt.vectorStoreId;
-        ragTriggerKeywords = dbGpt.ragTriggerKeywords;
-        resolvedModel = userSelectedModel ?? dbGpt.model ?? resolvedModel;
-
-        console.log("[SYSTEM PROMPT BREAKDOWN]", {
-          gptId,
-          generalPromptLength: generalPrompt.length,
-          gptSpecificPromptLength: gptSpecificPrompt.length,
-          combinedPromptLength: combinedSystemPrompt.length
-        });
-      } else {
-        combinedSystemPrompt =
-          generalSettings?.defaultSystemPrompt ||
-          "You are a helpful assistant.";
-        apiKey = generalSettings?.defaultApiKey;
-        resolvedModel = userSelectedModel ?? resolvedModel;
+      if (gptWithDefaults) {
+        baseSystemPrompt =
+          gptWithDefaults.combinedSystemPrompt || baseSystemPrompt;
+        apiKey = gptWithDefaults.effectiveApiKey;
+        vectorStoreId = gptWithDefaults.vectorStoreId;
+        ragTriggerKeywords = gptWithDefaults.ragTriggerKeywords;
+        resolvedModel =
+          userSelectedModel ?? gptWithDefaults.model ?? resolvedModel;
       }
     } else {
-      combinedSystemPrompt =
+      const generalSettings = await getCachedGeneralSettings();
+      baseSystemPrompt =
         generalSettings?.defaultSystemPrompt || "You are a helpful assistant.";
       apiKey = generalSettings?.defaultApiKey;
       resolvedModel = userSelectedModel ?? resolvedModel;
@@ -151,33 +320,28 @@ export async function POST(req: Request) {
       );
     }
 
-    if (userSystemPrompt) {
-      combinedSystemPrompt = `${userSystemPrompt}\n\n${combinedSystemPrompt}`;
-    }
-
-    combinedSystemPrompt +=
-      "\n\nFormatting rules: Use Markdown. When you include code, wrap it in fenced code blocks with a language tag (e.g., ```ts). Do not wrap the entire response in a code block.";
-
-    // --- OPTIMIZE: Compress system prompt (40% token reduction) ---
-    const originalPromptLength = combinedSystemPrompt.length;
-    combinedSystemPrompt = summarizeSystemPrompt(combinedSystemPrompt);
-    const compressedPromptLength = combinedSystemPrompt.length;
-    console.log("[PROMPT COMPRESSION]", {
-      originalChars: originalPromptLength,
-      compressedChars: compressedPromptLength,
-      reduction: `${Math.round(((originalPromptLength - compressedPromptLength) / originalPromptLength) * 100)}%`
-    });
-
-    // --- OpenAI client with resolved API key ---
+    // 3) Build model client
     const openaiClient = createOpenAI({
       apiKey: apiKey
     });
 
-    // --- Prepare tools ---
+    // Keep only a tiny rolling window pre-stream (do not serialize full history)
+    const trimmedMessages = getMinimalRollingWindow(messages);
+    const normalizedMessages = normalizeMessagesForModel(trimmedMessages);
+    const latestUserMessage = findLatestUserMessage(messages);
+    const latestUserText = extractMessageText(latestUserMessage);
+    const isSimpleGreeting = isSimpleGreetingMessage(latestUserText);
+    const isLowComplexity = isLowComplexityMessage(latestUserText);
+
+    const useRAG =
+      !!vectorStoreId && shouldUseRAG(latestUserText, ragTriggerKeywords);
+    const hasToolsEnabled = !!(webSearch || useRAG);
+    const summaryText = getCachedConversationSummary(chatId, messages.length);
+
+    // 5) Prepare required tools only (still pre-stream when feature-critical)
     let tools: ToolSet | undefined;
 
-    // Web search tool
-    if (webSearch) {
+    if (webSearch && !isSimpleGreeting && !isLowComplexity) {
       const webEnabledModels = ["gpt-4o", "gpt-4o-mini", "gpt-5-mini"];
 
       if (!webEnabledModels.includes(resolvedModel.toLowerCase())) {
@@ -188,194 +352,245 @@ export async function POST(req: Request) {
         tools = {
           web_search: openaiClient.tools.webSearch({})
         } as ToolSet;
-
-        if (!combinedSystemPrompt.toLowerCase().includes("web_search")) {
-          combinedSystemPrompt +=
-            "\nYou have web search capabilities. Use the web_search tool when needed.";
-        }
       }
     }
 
-    // --- OPTIMIZE: Conditional RAG - only enable if user query semantically requires documents ---
-    const extractMessageText = (message: any): string => {
-      if (!message) return "";
-
-      if (typeof message.content === "string") {
-        return message.content;
-      }
-
-      if (Array.isArray(message.content)) {
-        return message.content
-          .filter((part: any) => part.type === "text")
-          .map((part: any) => part.text)
-          .join(" ");
-      }
-
-      if (Array.isArray(message.parts)) {
-        return message.parts
-          .filter((part: any) => part.type === "text")
-          .map((part: any) => part.text)
-          .join(" ");
-      }
-
-      return "";
-    };
-
-    const latestUserMessage = messages
-      .slice()
-      .reverse()
-      .find((m: any) => m.role === "user");
-
-    const userMessageText = extractMessageText(latestUserMessage);
-
-    const userMessageWordCount = userMessageText
-      ? userMessageText.trim().split(/\s+/).length
-      : 0;
-    const useRAG =
-      vectorStoreId && shouldUseRAG(userMessageText, ragTriggerKeywords);
-
-    console.log("[RAG CHECK]", {
-      extractedText: userMessageText,
-      wordCount: userMessageWordCount,
-      hasVectorStore: !!vectorStoreId,
-      useRAG
-    });
-
-    // File search tool (if GPT has uploaded PDF AND user query requires it)
-    if (useRAG) {
+    if (useRAG && !isSimpleGreeting && !isLowComplexity) {
       tools = {
         ...tools,
         file_search: openaiClient.tools.fileSearch({
-          vectorStoreIds: [vectorStoreId!] // vectorStoreId is guaranteed non-null by useRAG check
+          vectorStoreIds: [vectorStoreId!],
+          maxNumResults: RAG_MAX_RESULTS
         })
       } as ToolSet;
-
-      if (!combinedSystemPrompt.toLowerCase().includes("file_search")) {
-        combinedSystemPrompt +=
-          "\nYou have access to uploaded documents via file_search. Use it to retrieve relevant information when needed.";
-      }
-
-      console.log(
-        "[FILE SEARCH] Conditionally enabled (RAG required by user query)"
-      );
-    } else if (vectorStoreId) {
-      console.log(
-        "[FILE SEARCH] Skipped (user query does not require documents)"
-      );
     }
 
-    // --- Select model ---
+    // 6) Build minimal system prompt (pre-stream only)
+    const systemPrompt = buildMinimalSystemPrompt({
+      userSystemPrompt,
+      basePrompt: baseSystemPrompt,
+      gptId,
+      hasWebSearch: !!webSearch,
+      hasFileSearch: !!useRAG,
+      isSimpleGreeting,
+      hasToolsEnabled,
+      conversationSummary: summaryText
+    });
+
+    // 7) Select model
     let selectedModel: LanguageModel;
+    let effectiveModel = resolvedModel;
+    const isComplexTurn = !isSimpleGreeting && !isLowComplexity;
+
+    // Fast-path for greetings: avoid high-latency reasoning models for trivial turns
+    if (isSimpleGreeting && resolvedModel.toLowerCase().startsWith("gpt-5")) {
+      effectiveModel = "gpt-4o-mini";
+    }
+
+    // Fast-path for very low complexity prompts (e.g., "what is 2+2")
     if (
-      (resolvedModel.toLowerCase() ?? "").includes("gpt") ||
+      !useRAG &&
+      !webSearch &&
+      isLowComplexity &&
+      resolvedModel.toLowerCase().startsWith("gpt-5")
+    ) {
+      effectiveModel = "gpt-4o-mini";
+    }
+
+    // Hybrid policy v3:
+    // - Preserve admin-selected model for complex non-tool turns.
+    // - Use gpt-4o-mini for tool-enabled turns to reduce hidden reasoning token burn
+    //   and improve reliability of final visible text output in UI.
+    if (hasToolsEnabled) {
+      effectiveModel = "gpt-4o-mini";
+    }
+
+    if (
+      (effectiveModel.toLowerCase() ?? "").includes("gpt") ||
       provider === "openai"
     ) {
-      selectedModel = openaiClient(resolvedModel);
+      selectedModel = openaiClient(effectiveModel);
     } else {
-      selectedModel = google(resolvedModel);
+      selectedModel = google(effectiveModel);
     }
 
-    // --- Store user messages (fire-and-forget to avoid blocking stream) ---
-    const userMessagePromises: Promise<any>[] = [];
-    for (const m of messages) {
-      if (!m.content || !m.role) continue;
-      if (m.role === "user") {
-        // Extract text content (ignore attachments for now in DB)
-        const textContent =
-          typeof m.content === "string"
-            ? m.content
-            : m.content
-                ?.filter((part: any) => part.type === "text")
-                .map((part: any) => part.text)
-                .join(" ") || "";
+    const preStreamMessages = normalizedMessages;
 
-        if (textContent) {
-          // Fire-and-forget: don't await to avoid blocking stream startup
-          userMessagePromises.push(
-            convex
-              .mutation(api.messages.storeMessage, {
-                chatId: resolvedChatId,
-                content: textContent,
-                role: "user",
-                gptId
-              })
-              .catch((error) => {
-                console.error("[USER MESSAGE STORE FAILED]", error);
-              })
-          );
-        }
-      }
-    }
-
-    // Start these in parallel but don't block streaming
-    Promise.all(userMessagePromises).catch((error) => {
-      console.error("[USER MESSAGE BATCH STORE FAILED]", error);
-    });
-
-    // --- Generate chat title asynchronously (only once per chat) ---
-    if (isNewChat && resolvedChatId) {
-      const firstUserMessage = messages.find((m: any) => m.role === "user");
-      const firstUserMessageText = extractMessageText(firstUserMessage);
-
-      if (firstUserMessageText) {
-        void generateChatTitle(firstUserMessageText, openaiClient("gpt-5-mini"))
-          .then((title) => {
-            if (!title || title === "New GPT Chat") return;
-            return convex.mutation(api.chats.updateChatTitle, {
-              id: resolvedChatId,
-              title
-            });
-          })
-          .catch((error) => {
-            console.error("[CHAT TITLE] Update failed", error);
-          });
-      }
-    }
-
-    // --- Debug logging ---
-    console.log("[GPT CONFIG - Final]", {
-      gptId: gptId || "None",
+    const modelMessages = preStreamMessages.map((message) => ({
+      role: message.role,
+      content: message.content
+    }));
+    const preStreamDoneAt = Date.now();
+    console.log("[PERF] pre-stream", {
+      t_pre_stream_ms: preStreamDoneAt - requestStartedAt,
+      messageCount: preStreamMessages.length,
+      inputMessageCount: messages.length,
+      hasTools: !!tools,
+      hasToolsEnabled,
+      isSimpleGreeting,
+      isLowComplexity,
+      isComplexTurn,
+      effectiveModel,
       resolvedModel,
-      apiKeySource:
-        gptId && apiKey === generalSettings?.defaultApiKey
-          ? "General default"
-          : gptId
-            ? "GPT-specific"
-            : "General default",
-      hasVectorStore: !!vectorStoreId,
-      hasWebSearch: !!webSearch,
-      tools: tools ? Object.keys(tools).join(", ") : "None"
+      preservedAdminModel: effectiveModel === resolvedModel
     });
 
-    // --- OPTIMIZE: Trim conversation history to stay within token budget ---
-    // Keep recent messages, drop old context to prevent hitting token limits
-    const trimmedMessages = trimConversationHistory(
-      messages as Array<{ role: string; content: any }>,
-      2000
-    );
-    const estimatedTokens = estimateRequestTokens(
-      combinedSystemPrompt,
-      trimmedMessages
-    );
-    console.log("[TOKEN BUDGET]", {
-      estimatedInputTokens: estimatedTokens,
-      messageCount: trimmedMessages.length,
-      trimmed: trimmedMessages.length !== messages.length
+    // streaming starts here
+    let firstChunkAt: number | null = null;
+    const streamStartedAt = Date.now();
+    console.log("[PERF] stream-start", {
+      t_stream_start_ms: streamStartedAt - requestStartedAt,
+      t_from_pre_stream_ms: streamStartedAt - preStreamDoneAt
     });
 
     const result = streamText({
       model: selectedModel,
-      messages: await convertToModelMessages(trimmedMessages as any),
-      system: combinedSystemPrompt,
+      messages: modelMessages,
+      system: systemPrompt,
       tools,
+      providerOptions:
+        effectiveModel.toLowerCase().startsWith("gpt-5") && !tools
+          ? {
+              openai: {
+                reasoningEffort: "minimal"
+              }
+            }
+          : undefined,
       maxRetries: 2,
-      maxOutputTokens: 8000, // Prevent runaway generation; must complete before 60s Vercel timeout
-      onFinish: ({ finishReason }) => {
+      maxOutputTokens:
+        isSimpleGreeting || isLowComplexity
+          ? 120
+          : hasToolsEnabled
+            ? TOOL_TURN_MAX_OUTPUT_TOKENS
+            : isComplexTurn
+              ? COMPLEX_TURN_MAX_OUTPUT_TOKENS
+              : NORMAL_TURN_MAX_OUTPUT_TOKENS,
+      onChunk: () => {
+        if (firstChunkAt !== null) return;
+        firstChunkAt = Date.now();
+        console.log("[PERF] first-chunk", {
+          t_first_chunk_ms: firstChunkAt - requestStartedAt,
+          t_after_stream_start_ms: firstChunkAt - streamStartedAt
+        });
+      },
+      onFinish: (finishEvent: any) => {
+        // ========================= POST-STREAM (non-blocking) =========================
+        // This callback runs after generation and should never block first token.
+        const finishReason = finishEvent?.finishReason;
         console.log(`[CHAT COMPLETE] Reason: ${finishReason}`);
+        const finishedAt = Date.now();
+        console.log("[PERF] finish", {
+          t_finish_ms: finishedAt - requestStartedAt,
+          t_streaming_phase_ms: finishedAt - streamStartedAt,
+          t_first_chunk_ms:
+            firstChunkAt !== null ? firstChunkAt - requestStartedAt : null
+        });
+
+        // Optional assistant persistence can be added here once response text shape
+        // is standardized across providers in this project.
       }
     });
 
-    // ✅ USE YOUR ORIGINAL (this is fine):
+    // post-stream tasks
+    // Non-essential operations run detached and must never block first token.
+    void (async () => {
+      try {
+        const resolvedChatId = chatId as any;
+
+        // Full persistence handled after stream starts
+        const persistenceTask = resolvedChatId
+          ? (async () => {
+              const persistTasks = preStreamMessages
+                .filter((message: any) => message?.role === "user")
+                .map((message: any) => {
+                  const content = extractMessageText(message);
+                  if (!content) return Promise.resolve();
+                  return convex.mutation(api.messages.storeMessage, {
+                    chatId: resolvedChatId,
+                    content,
+                    role: "user",
+                    gptId
+                  });
+                });
+
+              await Promise.allSettled(persistTasks);
+            })()
+          : Promise.resolve();
+
+        // Background title generation (non-blocking; no auth mutation here)
+        const titleTask =
+          latestUserText && messages.length <= 2
+            ? generateChatTitle(
+                latestUserText,
+                openaiClient("gpt-5-mini")
+              ).catch(() => "")
+            : Promise.resolve("");
+
+        // Tool setup warm-up / RAG prep after stream starts
+        const toolWarmupTask =
+          webSearch || useRAG
+            ? Promise.resolve().then(() => {
+                if (webSearch) {
+                  openaiClient.tools.webSearch({});
+                }
+                if (useRAG && vectorStoreId) {
+                  openaiClient.tools.fileSearch({
+                    vectorStoreIds: [vectorStoreId],
+                    maxNumResults: RAG_MAX_RESULTS
+                  });
+                }
+              })
+            : Promise.resolve();
+
+        // Auto-summarize older conversation after stream starts (never blocks first token)
+        const summarizeTask =
+          resolvedChatId && messages.length >= SUMMARY_TURN_THRESHOLD
+            ? Promise.resolve().then(() => {
+                const olderMessages = messages.slice(
+                  0,
+                  Math.max(0, messages.length - SUMMARY_RECENT_WINDOW)
+                );
+                const summary = buildDeterministicConversationSummary(
+                  olderMessages,
+                  {
+                    maxItems: 10,
+                    maxCharsPerItem: 160,
+                    maxTotalChars: 1200
+                  }
+                );
+
+                if (summary) {
+                  conversationSummaryCache.set(resolvedChatId, {
+                    summary,
+                    updatedAt: Date.now(),
+                    basedOnCount: messages.length
+                  });
+                }
+              })
+            : Promise.resolve();
+
+        await Promise.allSettled([
+          persistenceTask,
+          titleTask,
+          toolWarmupTask,
+          summarizeTask
+        ]);
+
+        // Analytics/logging post-stream
+        console.log("[POST-STREAM TASKS COMPLETE]", {
+          gptId: gptId || "None",
+          chatId: !!resolvedChatId,
+          persistedMessages: preStreamMessages.length,
+          webSearch: !!webSearch,
+          useRAG,
+          summaryApplied: !!summaryText,
+          ragMaxResults: useRAG ? RAG_MAX_RESULTS : 0
+        });
+      } catch (error) {
+        console.error("[POST-STREAM TASKS FAILED]", error);
+      }
+    })();
+
     return result.toUIMessageStreamResponse();
   } catch (error) {
     console.error("[CHAT ERROR]", error);
