@@ -1,4 +1,9 @@
-import { streamText, type LanguageModel, type ToolSet } from "ai";
+import {
+  streamText,
+  convertToModelMessages,
+  type LanguageModel,
+  type ToolSet
+} from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { ConvexHttpClient } from "convex/browser";
@@ -121,18 +126,33 @@ function normalizeMessagesForModel(messages: any[]) {
         return null;
       }
 
-      const content = extractMessageText(message);
-      if (!content) return null;
+      if (Array.isArray(message?.parts) && message.parts.length > 0) {
+        return {
+          role,
+          parts: message.parts
+        };
+      }
+
+      if (Array.isArray(message?.content) && message.content.length > 0) {
+        return {
+          role,
+          content: message.content
+        };
+      }
+
+      const content =
+        typeof message?.content === "string"
+          ? message.content
+          : extractMessageText(message);
+
+      if (!content?.trim()) return null;
 
       return {
         role,
         content
       };
     })
-    .filter(Boolean) as Array<{
-    role: "user" | "assistant" | "system";
-    content: string;
-  }>;
+    .filter(Boolean) as Array<any>;
 }
 
 function extractMessageText(message: any): string {
@@ -443,10 +463,7 @@ export async function POST(req: Request) {
 
     const preStreamMessages = normalizedMessages;
 
-    const modelMessages = preStreamMessages.map((message) => ({
-      role: message.role,
-      content: message.content
-    }));
+    const modelMessages = await convertToModelMessages(preStreamMessages);
     const preStreamDoneAt = Date.now();
     console.log("[PERF] pre-stream", {
       t_pre_stream_ms: preStreamDoneAt - requestStartedAt,
