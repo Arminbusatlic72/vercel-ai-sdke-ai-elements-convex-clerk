@@ -58,7 +58,9 @@ describe("WelcomeHeader", () => {
   });
 
   it("shows pkg.name once query resolves successfully", () => {
-    vi.mocked(useQuery).mockReturnValue({ name: "Speculative Futures Toolkit" });
+    vi.mocked(useQuery).mockReturnValue({
+      name: "Speculative Futures Toolkit"
+    });
 
     render(
       <WelcomeHeader
@@ -85,7 +87,11 @@ describe("WelcomeHeader", () => {
           role: "member",
           planLabel: null,
           aiCredits: 42,
-          subscription: { productId: "prod_unknown", status: "active", plan: "x" }
+          subscription: {
+            productId: "prod_unknown",
+            status: "active",
+            plan: "x"
+          }
         }}
       />
     );
@@ -128,6 +134,9 @@ describe("WelcomeHeader", () => {
     expect(screen.getByText("Welcome, Test User 👋")).toBeInTheDocument();
     expect(screen.getByText("Role: MEMBER")).toBeInTheDocument();
     expect(screen.getByText("Plan: No active plan")).toBeInTheDocument();
-    expect(useQuery).toHaveBeenCalledWith("packages/getPackageByProductId", "skip");
+    expect(useQuery).toHaveBeenCalledWith(
+      "packages/getPackageByProductId",
+      "skip"
+    );
   });
 });
