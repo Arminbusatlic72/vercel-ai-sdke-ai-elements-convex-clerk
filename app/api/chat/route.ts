@@ -377,11 +377,14 @@ export async function POST(req: Request) {
     const normalizedMessages = normalizeMessagesForModel(trimmedMessages);
     const latestUserMessage = findLatestUserMessage(messages);
     const latestUserText = extractMessageText(latestUserMessage);
+    const isBeginTrigger = latestUserText.trim() === "__begin__";
     const isSimpleGreeting = isSimpleGreetingMessage(latestUserText);
     const isLowComplexity = isLowComplexityMessage(latestUserText);
 
     const useRAG =
-      !!vectorStoreId && shouldUseRAG(latestUserText, ragTriggerKeywords);
+      !isBeginTrigger &&
+      !!vectorStoreId &&
+      shouldUseRAG(latestUserText, ragTriggerKeywords);
     const hasToolsEnabled = !!(webSearch || useRAG);
     const summaryText = getCachedConversationSummary(chatId, messages.length);
 
@@ -461,7 +464,15 @@ export async function POST(req: Request) {
       selectedModel = google(effectiveModel);
     }
 
-    const preStreamMessages = normalizedMessages;
+    const preStreamMessages = isBeginTrigger
+      ? [
+          {
+            role: "user",
+            content:
+              "Start this conversation with one concise, friendly opening message and a brief note about how you can help."
+          }
+        ]
+      : normalizedMessages;
 
     const modelMessages = await convertToModelMessages(preStreamMessages);
     const preStreamDoneAt = Date.now();
@@ -549,6 +560,7 @@ export async function POST(req: Request) {
                 .map((message: any) => {
                   const content = extractMessageText(message);
                   if (!content) return Promise.resolve();
+                  if (content.trim() === "__begin__") return Promise.resolve();
                   return convex.mutation(api.messages.storeMessage, {
                     chatId: resolvedChatId,
                     content,
@@ -563,7 +575,7 @@ export async function POST(req: Request) {
 
         // Background title generation (non-blocking; no auth mutation here)
         const titleTask =
-          latestUserText && messages.length <= 2
+          latestUserText && messages.length <= 2 && !isBeginTrigger
             ? generateChatTitle(
                 latestUserText,
                 openaiClient("gpt-5-mini")

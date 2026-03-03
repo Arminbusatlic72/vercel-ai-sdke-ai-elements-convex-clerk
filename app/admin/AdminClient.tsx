@@ -46,6 +46,8 @@ export default function AdminClient() {
   const [gptIdInput, setGptIdInput] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [creatorName, setCreatorName] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [model, setModel] = useState("gpt-4");
   const [apiKey, setApiKey] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -111,6 +113,8 @@ export default function AdminClient() {
     setGptIdInput("");
     setName(""); // ✅ ADD THIS
     setDescription(""); // ✅ ADD THIS
+    setCreatorName("");
+    setAvatarUrl("");
     setModel("gpt-5");
     setApiKey("");
     setSystemPrompt("");
@@ -145,6 +149,8 @@ export default function AdminClient() {
         gptId: finalGptId,
         name: name || undefined, // ✅ ADD THIS
         description: description || undefined, // ✅ ADD THIS
+        creatorName: creatorName || undefined,
+        avatarUrl: avatarUrl || undefined,
         model,
         apiKey: apiKey || undefined,
         systemPrompt,
@@ -173,6 +179,8 @@ export default function AdminClient() {
     setGptIdInput(g.gptId);
     setName(g.name || ""); // ✅ ADD THIS
     setDescription(g.description || ""); // ✅ ADD THIS
+    setCreatorName(g.creatorName || "");
+    setAvatarUrl(g.avatarUrl || "");
     setModel(g.model);
     setApiKey(g.apiKey || "");
     setSystemPrompt(g.systemPrompt || "");
@@ -456,6 +464,8 @@ export default function AdminClient() {
               gptIdInput={gptIdInput}
               name={name} // ✅ ADD THIS
               description={description} // ✅ ADD THIS
+              creatorName={creatorName}
+              avatarUrl={avatarUrl}
               model={model}
               apiKey={apiKey}
               systemPrompt={systemPrompt}
@@ -470,6 +480,8 @@ export default function AdminClient() {
               onGptIdChange={setGptIdInput}
               onNameChange={setName} // ✅ ADD THIS
               onDescriptionChange={setDescription} // ✅ ADD THIS
+              onCreatorNameChange={setCreatorName}
+              onAvatarUrlChange={setAvatarUrl}
               onModelChange={setModel}
               onApiKeyChange={setApiKey}
               onSystemPromptChange={setSystemPrompt}

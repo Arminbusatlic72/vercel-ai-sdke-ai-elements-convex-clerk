@@ -9,6 +9,8 @@ interface GPTFormCardProps {
   gptIdInput: string;
   name: string; // ✅ ADD THIS
   description: string; // ✅ ADD THIS
+  creatorName: string;
+  avatarUrl: string;
   model: string;
   apiKey: string;
   systemPrompt: string;
@@ -23,6 +25,8 @@ interface GPTFormCardProps {
   onGptIdChange: (value: string) => void;
   onNameChange: (value: string) => void; // ✅ ADD THIS
   onDescriptionChange: (value: string) => void; // ✅ ADD THIS
+  onCreatorNameChange: (value: string) => void;
+  onAvatarUrlChange: (value: string) => void;
   onModelChange: (value: string) => void;
   onApiKeyChange: (value: string) => void;
   onSystemPromptChange: (value: string) => void;
@@ -41,6 +45,8 @@ export function GPTFormCard({
   gptIdInput,
   name, // ✅ ADD THIS
   description, // ✅ ADD THIS
+  creatorName,
+  avatarUrl,
   model,
   apiKey,
   systemPrompt,
@@ -55,6 +61,8 @@ export function GPTFormCard({
   onGptIdChange,
   onNameChange, // ✅ ADD THIS
   onDescriptionChange, // ✅ ADD THIS
+  onCreatorNameChange,
+  onAvatarUrlChange,
   onModelChange,
   onApiKeyChange,
   onSystemPromptChange,
@@ -157,6 +165,40 @@ export function GPTFormCard({
           <p className="mt-1 text-xs text-gray-500">
             Helps users understand when to use this GPT
           </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Creator Name
+            </label>
+            <input
+              type="text"
+              value={creatorName}
+              onChange={(e) => onCreatorNameChange(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="e.g., Tim Stock"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Displayed on the GPT welcome screen (optional)
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Avatar URL
+            </label>
+            <input
+              type="url"
+              value={avatarUrl}
+              onChange={(e) => onAvatarUrlChange(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="https://example.com/avatar.png"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Public image URL for welcome screen avatar (optional)
+            </p>
+          </div>
         </div>
 
         <div>

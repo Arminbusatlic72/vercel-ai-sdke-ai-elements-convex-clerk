@@ -51,6 +51,7 @@ export function useAiChat({
   const isSavingRef = useRef(false);
   const submittingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const autoBeginTriggeredForChatRef = useRef<string | null>(null);
 
   // --- Convex Mutations ---
   const createChat = useMutation(api.chats.createChat);
@@ -121,6 +122,57 @@ export function useAiChat({
     );
   }, [initialChatId, initialMessages]);
 
+  // --- Memoized Models ---
+  const { modelMap, groupedModels } = useMemo(() => {
+    const map = new Map(models.map((m) => [m.value, m]));
+    const groups: Record<string, ModelConfig[]> = {};
+    models.forEach((m) => {
+      if (!groups[m.provider]) groups[m.provider] = [];
+      groups[m.provider].push(m);
+    });
+    return { modelMap: map, groupedModels: groups };
+  }, [models]);
+
+  useEffect(() => {
+    if (!initialChatId || !gptId) return;
+    if (initialMessages.length > 0) return;
+    if (messages.length > 0) return;
+    if (status === "streaming" || status === "submitted") return;
+
+    const chatKey = String(initialChatId);
+    if (autoBeginTriggeredForChatRef.current === chatKey) return;
+    autoBeginTriggeredForChatRef.current = chatKey;
+
+    const provider = modelMap.get(model)?.provider || "google";
+    const idempotencyKey = createIdempotencyKey(initialChatId, "__begin__");
+
+    void sendMessage(
+      { text: "__begin__" },
+      {
+        body: {
+          chatId: initialChatId,
+          gptId,
+          model,
+          provider,
+          webSearch: false
+        },
+        headers: {
+          "x-idempotency-key": idempotencyKey
+        }
+      }
+    );
+  }, [
+    initialChatId,
+    gptId,
+    initialMessages.length,
+    messages.length,
+    status,
+    model,
+    modelMap,
+    sendMessage,
+    createIdempotencyKey
+  ]);
+
   // --- Save new messages to DB ---
   useEffect(() => {
     if (!messages.length || isSavingRef.current) return;
@@ -133,6 +185,7 @@ export function useAiChat({
           const fullText = extractMessageText(
             msg.parts || [{ type: "text", text: (msg as any).content || "" }]
           );
+          if (fullText.trim() === "__begin__") return false;
           if (!fullText) return false;
           const key = `${msg.role}-${fullText}`;
           if (savedMessageKeys.current.has(key)) return false;
@@ -212,17 +265,6 @@ export function useAiChat({
       });
     }
   }, [messages, status]);
-
-  // --- Memoized Models ---
-  const { modelMap, groupedModels } = useMemo(() => {
-    const map = new Map(models.map((m) => [m.value, m]));
-    const groups: Record<string, ModelConfig[]> = {};
-    models.forEach((m) => {
-      if (!groups[m.provider]) groups[m.provider] = [];
-      groups[m.provider].push(m);
-    });
-    return { modelMap: map, groupedModels: groups };
-  }, [models]);
 
   // --- Handlers ---
   const handleModelChange = useCallback(
@@ -401,7 +443,17 @@ export function useAiChat({
     handleSubmit,
     handleRetry,
     handleCopy: (text: string) => navigator.clipboard.writeText(text),
-    displayMessages: messages,
+    displayMessages: messages.filter((message) => {
+      const text = extractMessageText(
+        message.parts || [
+          {
+            type: "text",
+            text: (message as any).content || ""
+          }
+        ]
+      );
+      return text.trim() !== "__begin__";
+    }),
     groupedModels,
     modelMap,
     inputRef,

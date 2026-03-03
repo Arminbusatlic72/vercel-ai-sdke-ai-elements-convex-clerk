@@ -168,6 +168,28 @@ export const checkGptAccess = query({
       .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkUserId))
       .unique();
 
+    // 1.5 Get GPT
+    const gpt = await ctx.db
+      .query("gpts")
+      .withIndex("by_gptId", (q) => q.eq("gptId", args.gptId))
+      .unique();
+
+    if (!gpt) {
+      return {
+        hasAccess: false,
+        reason: "GPT not found"
+      };
+    }
+
+    // Admins can access all GPTs
+    if (user?.role === "admin") {
+      return {
+        hasAccess: true,
+        reason: null,
+        gpt
+      };
+    }
+
     if (!user?.subscription) {
       return {
         hasAccess: false,
@@ -188,19 +210,6 @@ export const checkGptAccess = query({
       return {
         hasAccess: false,
         reason: "Subscription expired or inactive"
-      };
-    }
-
-    // 3. Get the GPT
-    const gpt = await ctx.db
-      .query("gpts")
-      .withIndex("by_gptId", (q) => q.eq("gptId", args.gptId))
-      .unique();
-
-    if (!gpt) {
-      return {
-        hasAccess: false,
-        reason: "GPT not found"
       };
     }
 

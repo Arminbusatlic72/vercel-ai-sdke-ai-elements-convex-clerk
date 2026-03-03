@@ -78,6 +78,8 @@ export interface GPTConfig {
   gptId: string;
   name?: string;
   description?: string;
+  creatorName?: string;
+  avatarUrl?: string;
   model: string;
   apiKey?: string;
   systemPrompt?: string;

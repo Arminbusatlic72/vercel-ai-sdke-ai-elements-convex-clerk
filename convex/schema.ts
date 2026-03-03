@@ -129,6 +129,8 @@ export default defineSchema({
     gptId: v.string(),
     name: v.optional(v.string()),
     description: v.optional(v.string()),
+    creatorName: v.optional(v.string()),
+    avatarUrl: v.optional(v.string()),
     model: v.string(),
     apiKey: v.optional(v.string()),
     packageId: v.optional(v.id("packages")),

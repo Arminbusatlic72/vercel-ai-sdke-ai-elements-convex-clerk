@@ -1,28 +1,32 @@
-import AiChat from "@/components/AiChat";
-import { openaiModels } from "@/lib/ai-models";
-import { resolveGptFromDb } from "@/lib/resolveGpt";
+import { auth } from "@clerk/nextjs/server";
+import { fetchQuery } from "convex/nextjs";
+import { notFound, redirect } from "next/navigation";
+import { api } from "@/convex/_generated/api";
+import GptEntryClient from "@/components/gpt/GptEntryClient";
 
 interface PageProps {
   params: { gptId: string };
 }
 
 export default async function DynamicGptPage({ params }: PageProps) {
-  const { gptId } = await params; // ✅ unwrap the promise in server component
-  const dbGpt = await resolveGptFromDb(gptId);
+  const { userId } = await auth();
+  if (!userId) redirect("/");
 
-  const systemPrompt =
-    dbGpt?.systemPrompt ||
-    "You are a helpful assistant that can answer questions and help with tasks.";
-  const model = dbGpt?.model || "gpt-4o-mini";
+  const { gptId } = await params;
+  const gpt = await fetchQuery(api.gpts.getGpt, { gptId });
+
+  if (!gpt) notFound();
 
   return (
-    <AiChat
-      chatId={undefined}
-      gptId={gptId}
-      initialMessages={[]}
-      models={openaiModels}
-      defaultModel={model}
-      showWebSearch
+    <GptEntryClient
+      gpt={{
+        gptId: gpt.gptId,
+        name: gpt.name,
+        description: gpt.description,
+        creatorName: gpt.creatorName,
+        avatarUrl: gpt.avatarUrl,
+        model: gpt.model
+      }}
     />
   );
 }

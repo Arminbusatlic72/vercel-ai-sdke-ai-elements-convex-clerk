@@ -835,6 +835,47 @@ export const getPackageByProductId = query({
   }
 });
 
+export const upsertPackageByProductId = mutation({
+  args: {
+    stripeProductId: v.string(),
+    stripePriceId: v.string(),
+    name: v.string()
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("packages")
+      .withIndex("by_stripeProductId", (q) =>
+        q.eq("stripeProductId", args.stripeProductId)
+      )
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        stripePriceId: args.stripePriceId,
+        name: args.name
+      });
+
+      return {
+        action: "updated",
+        packageId: existing._id
+      };
+    }
+
+    const packageId = await ctx.db.insert("packages", {
+      key: args.stripeProductId,
+      name: args.name,
+      stripePriceId: args.stripePriceId,
+      stripeProductId: args.stripeProductId,
+      tier: "free"
+    });
+
+    return {
+      action: "inserted",
+      packageId
+    };
+  }
+});
+
 /**
  * Get package by key
  */
