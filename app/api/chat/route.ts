@@ -468,17 +468,67 @@ export async function POST(req: Request) {
       ? [
           {
             role: "user",
-            content:
-              "Start this conversation with one concise, friendly opening message and a brief note about how you can help."
+            parts: [
+              {
+                type: "text",
+                text: "Start this conversation with one concise, friendly opening message and a brief note about how you can help."
+              }
+            ]
           }
         ]
       : normalizedMessages;
 
-    const modelMessages = await convertToModelMessages(preStreamMessages);
+    const messagesForModel = preStreamMessages.map((message: any) => {
+      if (Array.isArray(message?.parts)) {
+        return message;
+      }
+
+      if (
+        !message ||
+        message.content === undefined ||
+        message.content === null
+      ) {
+        return message;
+      }
+
+      if (typeof message.content === "string") {
+        return {
+          ...message,
+          parts: [{ type: "text", text: message.content }]
+        };
+      }
+
+      if (Array.isArray(message.content)) {
+        const normalizedParts = message.content
+          .map((part: any) => {
+            if (typeof part === "string") {
+              return { type: "text", text: part };
+            }
+
+            if (part?.type === "text" && typeof part?.text === "string") {
+              return { type: "text", text: part.text };
+            }
+
+            return null;
+          })
+          .filter(Boolean);
+
+        if (normalizedParts.length > 0) {
+          return {
+            ...message,
+            parts: normalizedParts
+          };
+        }
+      }
+
+      return message;
+    });
+
+    const modelMessages = await convertToModelMessages(messagesForModel);
     const preStreamDoneAt = Date.now();
     console.log("[PERF] pre-stream", {
       t_pre_stream_ms: preStreamDoneAt - requestStartedAt,
-      messageCount: preStreamMessages.length,
+      messageCount: messagesForModel.length,
       inputMessageCount: messages.length,
       hasTools: !!tools,
       hasToolsEnabled,

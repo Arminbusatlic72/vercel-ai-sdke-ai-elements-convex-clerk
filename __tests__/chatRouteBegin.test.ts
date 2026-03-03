@@ -104,7 +104,12 @@ describe("chat route __begin__ behavior", () => {
       expect.arrayContaining([
         expect.objectContaining({
           role: "user",
-          content: expect.stringContaining("Start this conversation")
+          parts: expect.arrayContaining([
+            expect.objectContaining({
+              type: "text",
+              text: expect.stringContaining("Start this conversation")
+            })
+          ])
         })
       ])
     );
@@ -116,5 +121,38 @@ describe("chat route __begin__ behavior", () => {
     );
 
     expect(persistedBegin).toBe(false);
+  });
+
+  it("normalizes legacy content-only messages to parts before convertToModelMessages", async () => {
+    const req = new Request("http://localhost/api/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        chatId: "chat_legacy",
+        messages: [{ role: "user", content: "Legacy text message" }],
+        webSearch: false,
+        provider: "openai"
+      })
+    });
+
+    const response = await POST(req);
+    expect(response.status).toBe(200);
+
+    expect(mocks.convertToModelMessages).toHaveBeenCalledTimes(1);
+    const convertedInput = mocks.convertToModelMessages.mock.calls[0][0];
+
+    expect(convertedInput).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          parts: expect.arrayContaining([
+            expect.objectContaining({
+              type: "text",
+              text: "Legacy text message"
+            })
+          ])
+        })
+      ])
+    );
   });
 });
