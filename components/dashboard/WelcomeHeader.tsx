@@ -8,22 +8,22 @@ import SubscriptionStatusBadge from "./SubscriptionStatusBadge";
 export default function WelcomeHeader({ data }: { data: any }) {
   const { user } = useUser();
   const productId = data?.subscription?.productId?.trim();
+  const queryArgs = productId
+    ? {
+        stripeProductId: productId
+      }
+    : "skip";
 
-  const pkg = useQuery(
-    api.packages.getPackageByProductId,
-    productId
-      ? {
-          stripeProductId: productId
-        }
-      : "skip"
-  );
+  const pkg = useQuery(api.packages.getPackageByProductId, queryArgs);
+  const planName = pkg?.name || data?.planLabel || "No active plan";
 
-  const rawPlan = data?.planLabel || pkg?.name || data?.subscription?.plan;
-  const planName = rawPlan
-    ? String(rawPlan)
-        .replace(/[-_]+/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase())
-    : "No active plan";
+  if (process.env.NODE_ENV === "development") {
+    console.log("WelcomeHeader plan debug", {
+      productId: data?.subscription?.productId,
+      queryArgs,
+      pkg
+    });
+  }
 
   return (
     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

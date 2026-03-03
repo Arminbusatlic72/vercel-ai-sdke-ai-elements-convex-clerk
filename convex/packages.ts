@@ -1,336 +1,411 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
+const PACKAGE_CATALOG = [
+  {
+    name: "Brand Decoder RV",
+    key: "standalone",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_BRAND_DECODER_RV!,
+    stripeProductId: process.env.STRIPE_PRODUCT_BRAND_DECODER_RV!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Contrarian Toolkit RV",
+    key: "standalone",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_CONTRARIAN_TOOLKIT_RV!,
+    stripeProductId: process.env.STRIPE_PRODUCT_CONTRARIAN_TOOLKIT_RV!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Crisis Simulator RV",
+    key: "standalone",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_CRISIS_SIMULATOR_RV!,
+    stripeProductId: process.env.STRIPE_PRODUCT_CRISIS_SIMULATOR_RV!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Culture Mapping Toolkit RV",
+    key: "standalone",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_CULTURE_MAPPING_RV!,
+    stripeProductId: process.env.STRIPE_PRODUCT_CULTURE_MAPPING_RV!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Diagnostic Toolkit RV",
+    key: "standalone",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_DIAGNOSTIC_TOOLKIT_RV!,
+    stripeProductId: process.env.STRIPE_PRODUCT_DIAGNOSTIC_TOOLKIT_RV!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Digital Flaneur Toolkit RV",
+    key: "standalone",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_DIGITAL_FLANEUR_RV!,
+    stripeProductId: process.env.STRIPE_PRODUCT_DIGITAL_FLANEUR_RV!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Packaging Analysis Toolkit RV",
+    key: "standalone",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_PACKAGING_ANALYSIS_RV!,
+    stripeProductId: process.env.STRIPE_PRODUCT_PACKAGING_ANALYSIS_RV!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Regional Code Toolkit RV",
+    key: "standalone",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_REGIONAL_CODE_RV!,
+    stripeProductId: process.env.STRIPE_PRODUCT_REGIONAL_CODE_RV!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Subculture Simulator RV",
+    key: "standalone",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_SUBCULTURE_SIMULATOR_RV!,
+    stripeProductId: process.env.STRIPE_PRODUCT_SUBCULTURE_SIMULATOR_RV!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Speculative Futures Toolkit RV",
+    key: "standalone",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_SPECULATIVE_FUTURES_RV!,
+    stripeProductId: process.env.STRIPE_PRODUCT_SPECULATIVE_FUTURES_RV!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Subculture Analysis Toolkit RV",
+    key: "standalone",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_SUBCULTURE_RV!,
+    stripeProductId: process.env.STRIPE_PRODUCT_SUBCULTURE_RV!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Visualizing Unknowns Toolkit RV",
+    key: "standalone",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_VISUALIZING_RV!,
+    stripeProductId: process.env.STRIPE_PRODUCT_VISUALIZING_RV!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Brand Decoder",
+    key: "StoryEngine",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_BRAND_DECODER!,
+    stripeProductId: process.env.STRIPE_PRODUCT_BRAND_DECODER!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Contrarian Toolkit",
+    key: "StoryEngine",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_CONTRARIAN!,
+    stripeProductId: process.env.STRIPE_PRODUCT_CONTRARIAN!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Crisis Simulator",
+    key: "StoryEngine",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_CRISIS!,
+    stripeProductId: process.env.STRIPE_PRODUCT_CRISIS!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Culture Mapping Toolkit",
+    key: "StoryEngine",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_CULTURE!,
+    stripeProductId: process.env.STRIPE_PRODUCT_CULTURE!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Diagnostic Toolkit",
+    key: "StoryEngine",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_DIAGNOSTIC!,
+    stripeProductId: process.env.STRIPE_PRODUCT_DIAGNOSTIC!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Digital Flaneur Toolkit",
+    key: "StoryEngine",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_DIGITAL!,
+    stripeProductId: process.env.STRIPE_PRODUCT_DIGITAL!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Packaging Analysis Toolkit",
+    key: "StoryEngine",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_PACKAGING!,
+    stripeProductId: process.env.STRIPE_PRODUCT_PACKAGING!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Regional Code Toolkit",
+    key: "StoryEngine",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_REGIONAL!,
+    stripeProductId: process.env.STRIPE_PRODUCT_REGIONAL!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Subculture Simulator",
+    key: "StoryEngine",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_SUBCULTURE_SIM!,
+    stripeProductId: process.env.STRIPE_PRODUCT_SUBCULTURE_SIM!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Speculative Futures Toolkit",
+    key: "StoryEngine",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_SPECULATIVE!,
+    stripeProductId: process.env.STRIPE_PRODUCT_SPECULATIVE!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Subculture Analysis Toolkit",
+    key: "StoryEngine",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_SUBCULTURE!,
+    stripeProductId: process.env.STRIPE_PRODUCT_SUBCULTURE!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Visualizing Unknowns Toolkit",
+    key: "StoryEngine",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_VISUALIZING!,
+    stripeProductId: process.env.STRIPE_PRODUCT_VISUALIZING!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "sDNA Client Project/Cooke Insight",
+    key: "standalone",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_CLIENT!,
+    stripeProductId: process.env.STRIPE_PRODUCT_CLIENT!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Book Project",
+    key: "standalone",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_CLIENT!,
+    stripeProductId: process.env.STRIPE_PRODUCT_CLIENT!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "sDNA StoryEngine",
+    key: "storyengine",
+    tier: "paid",
+    stripePriceId: process.env.STRIPE_PRICE_STORYENGINE!,
+    stripeProductId: process.env.STRIPE_PRODUCT_STORYENGINE!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 50000,
+    recurring: "monthly" as const,
+    description:
+      "StoryEngine is a modular intelligence platform for cultural sensemaking..."
+  },
+  {
+    name: "Rikkyo GPT",
+    key: "classroom-speaker-gpt",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_RIKKYO!,
+    stripeProductId: process.env.STRIPE_PRODUCT_RIKKYO!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Workshop Primer",
+    key: "workshop-primer",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_WORKSHOP!,
+    stripeProductId: process.env.STRIPE_PRODUCT_WORKSHOP!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Space Analysis Toolkit",
+    key: "space-analysis-toolkit",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_SPACE!,
+    stripeProductId: process.env.STRIPE_PRODUCT_SPACE!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "2026 Trend Theme Toolkit",
+    key: "trend-theme-2026-toolkit",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_2026_TREND!,
+    stripeProductId: process.env.STRIPE_PRODUCT_2026_TREND!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  }
+];
+
 export const seedPackages = mutation({
   handler: async (ctx) => {
-    const existing = await ctx.db.query("packages").collect();
-    if (existing.length > 0) return "Packages already exist";
+    let inserted = 0;
+    let updated = 0;
 
-    const initialPackages = [
-      {
-        name: "sDNA StoryEngine",
-        key: "storyengine",
-        tier: "paid",
-        stripePriceId: process.env.STRIPE_PRICE_STORYENGINE!,
-        stripeProductId: process.env.STRIPE_PRODUCT_STORYENGINE!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 50000,
-        recurring: "monthly" as const,
-        description:
-          "StoryEngine is a modular intelligence platform for cultural sensemaking,bringing together twelve specialized GPT toolkits designed to challenge assumptions and surface emerging patterns. Each toolkit applies a distinct analytical lens, from subculture and regional analysis to crisis simulation and speculative futures, allowing users to move fluidly between diagnosis and interpretation. Designed for strategists, creatives, and decision-makers operating at the edge of change, StoryEngine extends perception while keeping authorship human-led."
-      },
-      {
-        name: "sDNA Client Project",
-        key: "client-project",
-        tier: "paid",
-        stripePriceId: process.env.STRIPE_PRICE_CLIENT!,
-        stripeProductId: process.env.STRIPE_PRODUCT_CLIENT!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 40000,
-        recurring: "monthly" as const,
-        description: "",
-        hidden: true
-      },
-      {
-        name: "Brand Decoder",
-        key: "brand-decoder",
-        tier: "paid",
-        stripePriceId: process.env.STRIPE_PRICE_BRAND_DECODER!,
-        stripeProductId: process.env.STRIPE_PRODUCT_BRAND_DECODER!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Contrarian Toolkit",
-        key: "contrarian-toolkit",
-        tier: "paid",
-        stripePriceId: process.env.STRIPE_PRICE_CONTRARIAN!,
-        stripeProductId: process.env.STRIPE_PRODUCT_CONTRARIAN!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Crisis Simulator",
-        key: "crisis-simulator",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_CRISIS!,
-        stripeProductId: process.env.STRIPE_PRODUCT_CRISIS!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Culture Mapping Toolkit",
-        key: "culture-mapping-toolkit",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_CULTURE!,
-        stripeProductId: process.env.STRIPE_PRODUCT_CULTURE!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Diagnostic Toolkit",
-        key: "diagnostic-toolkit",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_DIAGNOSTIC!,
-        stripeProductId: process.env.STRIPE_PRODUCT_DIAGNOSTIC!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Digital Flaneur Toolkit",
-        key: "digital-flaneur-toolkit",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_DIGITAL!,
-        stripeProductId: process.env.STRIPE_PRODUCT_DIGITAL!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Packaging Analysis Toolkit",
-        key: "packaging-analysis-toolkit",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_PACKAGING!,
-        stripeProductId: process.env.STRIPE_PRODUCT_PACKAGING!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Regional Code Toolkit",
-        key: "regional-code-toolkit",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_REGIONAL!,
-        stripeProductId: process.env.STRIPE_PRODUCT_REGIONAL!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Speculative Futures Toolkit",
-        key: "speculative-futures-toolkit",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_SPECULATIVE_FUTURES_RV!,
-        stripeProductId: process.env.STRIPE_PRODUCT_SPECULATIVE_FUTURES_RV!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Subculture Analysis Toolkit",
-        key: "subculture-analysis-toolkit",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_SUBCULTURE!,
-        stripeProductId: process.env.STRIPE_PRODUCT_SUBCULTURE!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Visualizing Unknowns Toolkit",
-        key: "visualizing-unknowns-toolkit",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_VISUALIZING!,
-        stripeProductId: process.env.STRIPE_PRODUCT_VISUALIZING!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Language & Meaning Workshop",
-        key: "language-meaning-workshop",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_WORKSHOP!,
-        stripeProductId: process.env.STRIPE_PRODUCT_WORKSHOP!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Narrative Systems Workshop",
-        key: "narrative-systems-workshop",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_WORKSHOP!,
-        stripeProductId: process.env.STRIPE_PRODUCT_WORKSHOP!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Speculative Futures Workshop",
-        key: "speculative-futures-workshop",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_SPECULATIVE_FUTURES_RV!,
-        stripeProductId: process.env.STRIPE_PRODUCT_SPECULATIVE_FUTURES_RV!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Structured Foresight Workshop",
-        key: "structured-foresight-workshop",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_WORKSHOP!,
-        stripeProductId: process.env.STRIPE_PRODUCT_WORKSHOP!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "2026 Trend Theme Toolkit",
-        key: "2026-trend-theme-toolkit",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_2026_TREND!,
-        stripeProductId: process.env.STRIPE_PRODUCT_2026_TREND!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Analyzing Trends",
-        key: "analyzing-trends",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_BOOK!,
-        stripeProductId: process.env.STRIPE_PRODUCT_BOOK!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Workshop GPTs",
-        key: "workshop-gpts",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_WORKSHOP!,
-        stripeProductId: process.env.STRIPE_PRODUCT_WORKSHOP!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Rikkyo GPT",
-        key: "rikkyo-gpt",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_RIKKYO!,
-        stripeProductId: process.env.STRIPE_PRODUCT_RIKKYO!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Substack GPTs",
-        key: "substack-gpts",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_BOOK!,
-        stripeProductId: process.env.STRIPE_PRODUCT_BOOK!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Summer SandBox",
-        key: "summer-sandbox",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_BOOK!,
-        stripeProductId: process.env.STRIPE_PRODUCT_BOOK!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "LinkedIN GPT",
-        key: "linkedin-gpt",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_BOOK!,
-        stripeProductId: process.env.STRIPE_PRODUCT_BOOK!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Workshop Primer",
-        key: "workshop-primer",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_WORKSHOP!,
-        stripeProductId: process.env.STRIPE_PRODUCT_WORKSHOP!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Space Analysis Toolkit",
-        key: "space-analysis-toolkit",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_SPACE!,
-        stripeProductId: process.env.STRIPE_PRODUCT_SPACE!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
+    for (const pkg of PACKAGE_CATALOG) {
+      const existing = await ctx.db
+        .query("packages")
+        .withIndex("by_stripeProductId", (q) =>
+          q.eq("stripeProductId", pkg.stripeProductId)
+        )
+        .first();
+
+      if (existing) {
+        await ctx.db.patch(existing._id, {
+          ...pkg,
+          features: ["Access to assigned GPTs", "Chat history", "PDF uploads"]
+        });
+        updated += 1;
+      } else {
+        await ctx.db.insert("packages", {
+          ...pkg,
+          features: ["Access to assigned GPTs", "Chat history", "PDF uploads"]
+        });
+        inserted += 1;
       }
-    ];
-
-    for (const pkg of initialPackages) {
-      await ctx.db.insert("packages", {
-        ...pkg,
-        features: ["Access to assigned GPTs", "Chat history", "PDF uploads"]
-      });
     }
 
-    return "Successfully seeded " + initialPackages.length + " packages.";
+    return `Seed complete. Inserted ${inserted}, updated ${updated}, total processed ${PACKAGE_CATALOG.length}.`;
   }
 });
 
@@ -368,381 +443,7 @@ export const reseedPackages = mutation({
       await ctx.db.delete(pkg._id);
     }
 
-    const initialPackages = [
-      {
-        name: "Brand Decoder RV",
-        key: "standalone",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_BRAND_DECODER_RV!,
-        stripeProductId: process.env.STRIPE_PRODUCT_BRAND_DECODER_RV!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Contrarian Toolkit RV",
-        key: "standalone",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_CONTRARIAN_TOOLKIT_RV!,
-        stripeProductId: process.env.STRIPE_PRODUCT_CONTRARIAN_TOOLKIT_RV!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Crisis Simulator RV",
-        key: "standalone",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_CRISIS_SIMULATOR_RV!,
-        stripeProductId: process.env.STRIPE_PRODUCT_CRISIS_SIMULATOR_RV!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Culture Mapping Toolkit RV",
-        key: "standalone",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_CULTURE_MAPPING_RV!,
-        stripeProductId: process.env.STRIPE_PRODUCT_CULTURE_MAPPING_RV!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Diagnostic Toolkit RV",
-        key: "standalone",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_DIAGNOSTIC_TOOLKIT_RV!,
-        stripeProductId: process.env.STRIPE_PRODUCT_DIAGNOSTIC_TOOLKIT_RV!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Digital Flaneur Toolkit RV",
-        key: "standalone",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_DIGITAL_FLANEUR_RV!,
-        stripeProductId: process.env.STRIPE_PRODUCT_DIGITAL_FLANEUR_RV!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Packaging Analysis Toolkit RV",
-        key: "standalone",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_PACKAGING_ANALYSIS_RV!,
-        stripeProductId: process.env.STRIPE_PRODUCT_PACKAGING_ANALYSIS_RV!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Regional Code Toolkit RV",
-        key: "standalone",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_REGIONAL_CODE_RV!,
-        stripeProductId: process.env.STRIPE_PRODUCT_REGIONAL_CODE_RV!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Subculture Simulator RV",
-        key: "standalone",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_SUBCULTURE_SIMULATOR_RV!,
-        stripeProductId: process.env.STRIPE_PRODUCT_SUBCULTURE_SIMULATOR_RV!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Speculative Futures Toolkit RV",
-        key: "standalone",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_SPECULATIVE_FUTURES_RV!,
-        stripeProductId: process.env.STRIPE_PRODUCT_SPECULATIVE_FUTURES_RV!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Subculture Analysis Toolkit RV",
-        key: "standalone",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_SUBCULTURE_RV!,
-        stripeProductId: process.env.STRIPE_PRODUCT_SUBCULTURE_RV!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Visualizing Unknowns Toolkit RV",
-        key: "standalone",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_VISUALIZING_RV!,
-        stripeProductId: process.env.STRIPE_PRODUCT_VISUALIZING_RV!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Brand Decoder",
-        key: "StoryEngine",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_BRAND_DECODER!,
-        stripeProductId: process.env.STRIPE_PRODUCT_BRAND_DECODER!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Contrarian Toolkit",
-        key: "StoryEngine",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_CONTRARIAN!,
-        stripeProductId: process.env.STRIPE_PRODUCT_CONTRARIAN!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Crisis Simulator",
-        key: "StoryEngine",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_CRISIS!,
-        stripeProductId: process.env.STRIPE_PRODUCT_CRISIS!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Culture Mapping Toolkit",
-        key: "StoryEngine",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_CULTURE!,
-        stripeProductId: process.env.STRIPE_PRODUCT_CULTURE!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Diagnostic Toolkit",
-        key: "StoryEngine",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_DIAGNOSTIC!,
-        stripeProductId: process.env.STRIPE_PRODUCT_DIAGNOSTIC!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Digital Flaneur Toolkit",
-        key: "StoryEngine",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_DIGITAL!,
-        stripeProductId: process.env.STRIPE_PRODUCT_DIGITAL!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Packaging Analysis Toolkit",
-        key: "StoryEngine",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_PACKAGING!,
-        stripeProductId: process.env.STRIPE_PRODUCT_PACKAGING!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Regional Code Toolkit",
-        key: "StoryEngine",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_REGIONAL!,
-        stripeProductId: process.env.STRIPE_PRODUCT_REGIONAL!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Subculture Simulator",
-        key: "StoryEngine",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_SUBCULTURE_SIM!,
-        stripeProductId: process.env.STRIPE_PRODUCT_SUBCULTURE_SIM!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Speculative Futures Toolkit",
-        key: "StoryEngine",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_SPECULATIVE!,
-        stripeProductId: process.env.STRIPE_PRODUCT_SPECULATIVE!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Subculture Analysis Toolkit",
-        key: "StoryEngine",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_SUBCULTURE!,
-        stripeProductId: process.env.STRIPE_PRODUCT_SUBCULTURE!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Visualizing Unknowns Toolkit",
-        key: "StoryEngine",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_VISUALIZING!,
-        stripeProductId: process.env.STRIPE_PRODUCT_VISUALIZING!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "sDNA Client Project/Cooke Insight",
-        key: "standalone",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_CLIENT!,
-        stripeProductId: process.env.STRIPE_PRODUCT_CLIENT!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Book Project",
-        key: "standalone",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_CLIENT!,
-        stripeProductId: process.env.STRIPE_PRODUCT_CLIENT!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "sDNA StoryEngine",
-        key: "storyengine",
-        tier: "paid",
-        stripePriceId: process.env.STRIPE_PRICE_STORYENGINE!,
-        stripeProductId: process.env.STRIPE_PRODUCT_STORYENGINE!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 50000,
-        recurring: "monthly" as const,
-        description:
-          "StoryEngine is a modular intelligence platform for cultural sensemaking..."
-      },
-      {
-        name: "Rikkyo GPT",
-        key: "classroom-speaker-gpt",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_RIKKYO!,
-        stripeProductId: process.env.STRIPE_PRODUCT_RIKKYO!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Workshop Primer",
-        key: "workshop-primer",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_WORKSHOP!,
-        stripeProductId: process.env.STRIPE_PRODUCT_WORKSHOP!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "Space Analysis Toolkit",
-        key: "space-analysis-toolkit",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_SPACE!,
-        stripeProductId: process.env.STRIPE_PRODUCT_SPACE!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      },
-      {
-        name: "2026 Trend Theme Toolkit",
-        key: "trend-theme-2026-toolkit",
-        tier: "free",
-        stripePriceId: process.env.STRIPE_PRICE_2026_TREND!,
-        stripeProductId: process.env.STRIPE_PRODUCT_2026_TREND!,
-        maxGpts: undefined,
-        durationDays: undefined,
-        priceAmount: 0,
-        recurring: "monthly" as const,
-        description: ""
-      }
-    ];
+    const initialPackages = PACKAGE_CATALOG;
 
     for (const pkg of initialPackages) {
       await ctx.db.insert("packages", {
@@ -872,6 +573,36 @@ export const upsertPackageByProductId = mutation({
     return {
       action: "inserted",
       packageId
+    };
+  }
+});
+
+export const updatePackageNameByProductId = mutation({
+  args: {
+    stripeProductId: v.string(),
+    name: v.string()
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("packages")
+      .withIndex("by_stripeProductId", (q) =>
+        q.eq("stripeProductId", args.stripeProductId)
+      )
+      .first();
+
+    if (!existing) {
+      return {
+        action: "not_found"
+      };
+    }
+
+    await ctx.db.patch(existing._id, {
+      name: args.name
+    });
+
+    return {
+      action: "updated",
+      packageId: existing._id
     };
   }
 });
