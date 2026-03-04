@@ -89,5 +89,7 @@ npm run dev
 ## Useful Docs
 
 - Admin test plan: [docs/ADMIN_CHAT_IMPROVEMENTS_TEST_GUIDE.md](docs/ADMIN_CHAT_IMPROVEMENTS_TEST_GUIDE.md)
+- Begin flow behavior: [docs/BEGIN_FLOW_BEHAVIOR.md](docs/BEGIN_FLOW_BEHAVIOR.md)
+- Chat title creation: [docs/CHAT_TITLE_CREATION.md](docs/CHAT_TITLE_CREATION.md)
 - Deployment checklist: [docs/DEPLOYMENT_CHECKLIST.md](docs/DEPLOYMENT_CHECKLIST.md)
 - Subscription implementation: [docs/SUBSCRIPTION_IMPLEMENTATION.md](docs/SUBSCRIPTION_IMPLEMENTATION.md)
