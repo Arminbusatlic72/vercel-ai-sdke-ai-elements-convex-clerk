@@ -174,19 +174,33 @@ export default function AdminClient() {
   const [selectedPackageId, setSelectedPackageId] = useState<
     Id<"packages"> | string | undefined
   >("");
-  const handleEdit = (g: GPTConfig) => {
+
+  const applyGptToForm = (g: GPTConfig) => {
     setGptId(g.gptId);
     setGptIdInput(g.gptId);
-    setName(g.name || ""); // ✅ ADD THIS
-    setDescription(g.description || ""); // ✅ ADD THIS
+    setName(g.name || "");
+    setDescription(g.description || "");
     setCreatorName(g.creatorName || "");
     setAvatarUrl(g.avatarUrl || "");
     setModel(g.model);
     setApiKey(g.apiKey || "");
     setSystemPrompt(g.systemPrompt || "");
     setRagTriggerKeywordsInput((g.ragTriggerKeywords || []).join(", "));
-    setSelectedPackageId(g.packageId || ""); // Set package on edit
+    setSelectedPackageId(g.packageId || "");
     setIsEditing(true);
+  };
+
+  const handleSelectGpt = (nextGptId: string) => {
+    setSelectedGptId(nextGptId);
+    const nextGpt = gpts.find((g) => g.gptId === nextGptId);
+    if (nextGpt) {
+      applyGptToForm(nextGpt);
+    }
+  };
+
+  const handleEdit = (g: GPTConfig) => {
+    setSelectedGptId(g.gptId);
+    applyGptToForm(g);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -495,7 +509,7 @@ export default function AdminClient() {
               gpts={gpts}
               selectedGptId={selectedGptId}
               generalSystemPrompt={generalSystemPrompt}
-              onSelect={setSelectedGptId}
+              onSelect={handleSelectGpt}
               onEdit={handleEdit}
               onDelete={handleDeleteClick}
             />
@@ -506,11 +520,13 @@ export default function AdminClient() {
             {selectedGpt ? (
               <div className="sticky top-6 space-y-6">
                 <GPTDetailsCard
+                  key={`details-${selectedGpt.gptId}`}
                   selectedGpt={selectedGpt}
                   generalSystemPrompt={generalSystemPrompt}
                 />
 
                 <DocumentsCard
+                  key={`docs-${selectedGpt.gptId}`}
                   selectedGpt={selectedGpt}
                   uploadingPdf={uploadingPdf}
                   pdfError={pdfError}
