@@ -167,6 +167,7 @@ export function useAiChat({
             body: {
               chatId: initialChatId,
               gptId,
+              projectId,
               model,
               provider,
               webSearch: false
@@ -191,6 +192,7 @@ export function useAiChat({
     hasBeginParam,
     initialChatId,
     gptId,
+    projectId,
     initialMessages.length,
     messages.length,
     status,
@@ -385,6 +387,7 @@ export function useAiChat({
             body: {
               chatId: activeChatId,
               gptId,
+              projectId,
               model,
               provider,
               webSearch
@@ -443,7 +446,7 @@ export function useAiChat({
         text: retryText
       },
       {
-        body: { chatId, gptId, model, provider, webSearch },
+        body: { chatId, gptId, projectId, model, provider, webSearch },
         headers: {
           "x-idempotency-key": idempotencyKey
         }
@@ -454,6 +457,7 @@ export function useAiChat({
     sendMessage,
     chatId,
     gptId,
+    projectId,
     model,
     modelMap,
     webSearch,

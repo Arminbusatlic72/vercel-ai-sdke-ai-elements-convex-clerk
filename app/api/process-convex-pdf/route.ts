@@ -4,31 +4,67 @@ import { NextRequest } from "next/server";
 import OpenAI from "openai";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { auth } from "@clerk/nextjs/server";
 
 export const runtime = "nodejs";
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 export async function POST(req: NextRequest) {
   try {
-    const { gptId, storageId, fileName, fileSize } = await req.json();
+    const { getToken } = await auth();
+    const convexToken =
+      (await getToken({ template: "convex" })) ??
+      (await getToken()) ??
+      undefined;
 
-    if (!gptId || !storageId || !fileName) {
+    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!, {
+      auth: convexToken
+    });
+
+    const { gptId, projectId, storageId, fileName, fileSize } =
+      await req.json();
+
+    if ((!gptId && !projectId) || !storageId || !fileName) {
       return Response.json(
-        { error: "Missing required fields" },
+        { error: "Missing required fields (gptId or projectId required)" },
         { status: 400 }
       );
     }
 
+    if (projectId && !convexToken) {
+      return Response.json({ error: "Not authenticated" }, { status: 401 });
+    }
+
     console.log(`[Process PDF] Starting for ${fileName} (${fileSize} bytes)`);
 
-    // ✅ Get GPT config and API key
-    const gpt = await convex.query(api.gpts.getGpt, { gptId });
-    if (!gpt) {
-      return Response.json({ error: "GPT not found" }, { status: 404 });
+    let vectorStoreId: string | undefined;
+    let resolvedGptId: string | undefined = gptId;
+
+    // ✅ Resolve API key + vector store from GPT or Project
+    let gpt: any = null;
+    let project: any = null;
+
+    if (gptId) {
+      gpt = await convex.query(api.gpts.getGpt, { gptId });
+      if (!gpt) {
+        return Response.json({ error: "GPT not found" }, { status: 404 });
+      }
+      vectorStoreId = gpt.vectorStoreId;
+    }
+
+    if (projectId) {
+      project = await convex.query(api.project.getProject, { id: projectId });
+      if (!project) {
+        return Response.json({ error: "Project not found" }, { status: 404 });
+      }
+      vectorStoreId = project.vectorStoreId;
+      resolvedGptId = resolvedGptId ?? project.gptId;
+      if (!gpt && resolvedGptId) {
+        gpt = await convex.query(api.gpts.getGpt, { gptId: resolvedGptId });
+      }
     }
 
     const generalSettings = await convex.query(api.gpts.getGeneralSettings, {});
-    const apiKey = gpt.apiKey || generalSettings?.defaultApiKey;
+    const apiKey = gpt?.apiKey || generalSettings?.defaultApiKey;
 
     if (!apiKey) {
       return Response.json({ error: "No API key configured" }, { status: 400 });
@@ -59,11 +95,14 @@ export async function POST(req: NextRequest) {
     // ✅ Upload to OpenAI
     const openai = new OpenAI({ apiKey });
 
-    let vectorStoreId = gpt.vectorStoreId;
     if (!vectorStoreId) {
-      console.log(`[Vector Store] Creating new vector store for GPT: ${gptId}`);
+      console.log(
+        `[Vector Store] Creating new vector store for ${projectId ? `project:${projectId}` : `gpt:${gptId}`}`
+      );
       const vectorStore = await openai.vectorStores.create({
-        name: `GPT-${gptId}-Knowledge`
+        name: projectId
+          ? `Project-${projectId}-Knowledge`
+          : `GPT-${gptId}-Knowledge`
       });
       vectorStoreId = vectorStore.id;
       console.log(`[Vector Store] Created: ${vectorStoreId}`);
@@ -83,14 +122,25 @@ export async function POST(req: NextRequest) {
     console.log(`[OpenAI] File uploaded: ${uploadedFile.id}`);
 
     // ✅ Save metadata to Convex
-    await convex.mutation(api.gpts.addPdfToGpt, {
-      gptId,
-      vectorStoreId,
-      fileName,
-      openaiFileId: uploadedFile.id,
-      convexStorageId: storageId,
-      fileSize
-    });
+    if (projectId) {
+      await convex.mutation(api.project.addPdfToProject, {
+        projectId,
+        vectorStoreId,
+        fileName,
+        openaiFileId: uploadedFile.id,
+        convexStorageId: storageId,
+        fileSize
+      });
+    } else {
+      await convex.mutation(api.gpts.addPdfToGpt, {
+        gptId,
+        vectorStoreId,
+        fileName,
+        openaiFileId: uploadedFile.id,
+        convexStorageId: storageId,
+        fileSize
+      });
+    }
 
     console.log(`[Success] PDF processed: ${fileName}`);
 

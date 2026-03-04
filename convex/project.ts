@@ -89,3 +89,79 @@ export const renameProject = mutation({
     });
   }
 });
+
+export const addPdfToProject = mutation({
+  args: {
+    projectId: v.id("projects"),
+    vectorStoreId: v.string(),
+    fileName: v.string(),
+    openaiFileId: v.string(),
+    convexStorageId: v.id("_storage"),
+    fileSize: v.number()
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const project = await ctx.db.get(args.projectId);
+    if (!project || project.userId !== identity.subject) {
+      throw new Error("Unauthorized");
+    }
+
+    const pdfFiles = project.pdfFiles ?? [];
+
+    await ctx.db.patch(project._id, {
+      vectorStoreId: args.vectorStoreId,
+      pdfFiles: [
+        ...pdfFiles,
+        {
+          fileName: args.fileName,
+          openaiFileId: args.openaiFileId,
+          convexStorageId: args.convexStorageId,
+          fileSize: args.fileSize,
+          uploadedAt: Date.now()
+        }
+      ]
+    });
+
+    return project._id;
+  }
+});
+
+export const removePdfFromProject = mutation({
+  args: {
+    projectId: v.id("projects"),
+    openaiFileId: v.string()
+  },
+  handler: async (ctx, { projectId, openaiFileId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const project = await ctx.db.get(projectId);
+    if (!project || project.userId !== identity.subject) {
+      throw new Error("Unauthorized");
+    }
+
+    const fileToDelete = (project.pdfFiles || []).find(
+      (pdf: any) => pdf.openaiFileId === openaiFileId
+    );
+
+    if (fileToDelete?.convexStorageId) {
+      try {
+        await ctx.storage.delete(fileToDelete.convexStorageId);
+      } catch (error) {
+        console.error("[Project Storage] Delete error:", error);
+      }
+    }
+
+    const updatedFiles = (project.pdfFiles || []).filter(
+      (pdf: any) => pdf.openaiFileId !== openaiFileId
+    );
+
+    await ctx.db.patch(project._id, {
+      pdfFiles: updatedFiles
+    });
+
+    return project._id;
+  }
+});

@@ -326,6 +326,7 @@ export async function POST(req: Request) {
       messages,
       chatId,
       gptId,
+      projectId,
       model: userSelectedModel,
       webSearch,
       provider,
@@ -342,7 +343,8 @@ export async function POST(req: Request) {
     // Resolve GPT config with one Convex call for GPT chats
     let resolvedModel: string = "gpt-4o-mini";
     let apiKey: string | undefined;
-    let vectorStoreId: string | undefined;
+    let gptVectorStoreId: string | undefined;
+    let projectVectorStoreId: string | undefined;
     let ragTriggerKeywords: string[] | undefined;
     let baseSystemPrompt = "You are a helpful assistant.";
 
@@ -353,7 +355,7 @@ export async function POST(req: Request) {
         baseSystemPrompt =
           gptWithDefaults.combinedSystemPrompt || baseSystemPrompt;
         apiKey = gptWithDefaults.effectiveApiKey;
-        vectorStoreId = gptWithDefaults.vectorStoreId;
+        gptVectorStoreId = gptWithDefaults.vectorStoreId;
         ragTriggerKeywords = gptWithDefaults.ragTriggerKeywords;
         resolvedModel =
           userSelectedModel ?? gptWithDefaults.model ?? resolvedModel;
@@ -364,6 +366,13 @@ export async function POST(req: Request) {
         generalSettings?.defaultSystemPrompt || "You are a helpful assistant.";
       apiKey = generalSettings?.defaultApiKey;
       resolvedModel = userSelectedModel ?? resolvedModel;
+    }
+
+    if (projectId) {
+      const project = await convex.query(api.project.getProject, {
+        id: projectId
+      });
+      projectVectorStoreId = project?.vectorStoreId;
     }
 
     if (!apiKey) {
@@ -389,9 +398,14 @@ export async function POST(req: Request) {
     const isSimpleGreeting = isSimpleGreetingMessage(latestUserText);
     const isLowComplexity = isLowComplexityMessage(latestUserText);
 
+    const ragVectorStoreIds = [gptVectorStoreId, projectVectorStoreId].filter(
+      Boolean
+    ) as string[];
+    const hasAnyRagVectorStore = ragVectorStoreIds.length > 0;
+
     const useRAG =
       !isBeginTrigger &&
-      !!vectorStoreId &&
+      hasAnyRagVectorStore &&
       shouldUseRAG(latestUserText, ragTriggerKeywords);
     const hasToolsEnabled = !!(webSearch || useRAG);
     const summaryText = getCachedConversationSummary(chatId, messages.length);
@@ -417,7 +431,7 @@ export async function POST(req: Request) {
       tools = {
         ...tools,
         file_search: openaiClient.tools.fileSearch({
-          vectorStoreIds: [vectorStoreId!],
+          vectorStoreIds: ragVectorStoreIds,
           maxNumResults: RAG_MAX_RESULTS
         })
       } as ToolSet;
@@ -715,9 +729,9 @@ export async function POST(req: Request) {
                 if (webSearch) {
                   openaiClient.tools.webSearch({});
                 }
-                if (useRAG && vectorStoreId) {
+                if (useRAG && ragVectorStoreIds.length > 0) {
                   openaiClient.tools.fileSearch({
-                    vectorStoreIds: [vectorStoreId],
+                    vectorStoreIds: ragVectorStoreIds,
                     maxNumResults: RAG_MAX_RESULTS
                   });
                 }

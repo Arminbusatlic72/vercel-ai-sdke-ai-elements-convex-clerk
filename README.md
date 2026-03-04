@@ -92,4 +92,5 @@ npm run dev
 - Begin flow behavior: [docs/BEGIN_FLOW_BEHAVIOR.md](docs/BEGIN_FLOW_BEHAVIOR.md)
 - Chat title creation: [docs/CHAT_TITLE_CREATION.md](docs/CHAT_TITLE_CREATION.md)
 - Deployment checklist: [docs/DEPLOYMENT_CHECKLIST.md](docs/DEPLOYMENT_CHECKLIST.md)
+- Project usage guide: [docs/PROJECT_USAGE.md](docs/PROJECT_USAGE.md)
 - Subscription implementation: [docs/SUBSCRIPTION_IMPLEMENTATION.md](docs/SUBSCRIPTION_IMPLEMENTATION.md)

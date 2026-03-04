@@ -262,6 +262,52 @@ export const updateChatProject = mutation({
   }
 });
 
+export const moveChatToProject = mutation({
+  args: {
+    chatId: v.id("chats"),
+    projectId: v.union(v.id("projects"), v.null())
+  },
+  handler: async (ctx, { chatId, projectId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const chat = await ctx.db.get(chatId);
+    if (!chat || chat.userId !== identity.subject) {
+      throw new Error("Unauthorized");
+    }
+
+    if (projectId !== null) {
+      const project = await ctx.db.get(projectId);
+      if (!project || project.userId !== identity.subject) {
+        throw new Error("Unauthorized project access");
+      }
+    }
+
+    const nextProjectId = projectId === null ? undefined : projectId;
+
+    await ctx.db.patch(chatId, {
+      projectId: nextProjectId
+    });
+
+    const chatMessages = await ctx.db
+      .query("messages")
+      .withIndex("by_chat", (q) => q.eq("chatId", chatId))
+      .collect();
+
+    for (const message of chatMessages) {
+      await ctx.db.patch(message._id, {
+        projectId: nextProjectId
+      });
+    }
+
+    return {
+      chatId,
+      projectId: nextProjectId,
+      updatedMessages: chatMessages.length
+    };
+  }
+});
+
 // });
 
 export const renameChat = mutation({
@@ -327,10 +373,14 @@ export const searchChats = query(
       .withIndex("by_user", (q) => q.eq("userId", identity.subject))
       .order("desc");
 
-    // ✅ Optionally filter by project
+    // ✅ Filter by project context
     if (projectId) {
       chatQuery = chatQuery.filter((c) =>
         c.eq(c.field("projectId"), projectId)
+      );
+    } else {
+      chatQuery = chatQuery.filter((c) =>
+        c.eq(c.field("projectId"), undefined)
       );
     }
 

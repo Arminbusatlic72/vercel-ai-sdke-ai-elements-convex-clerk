@@ -17,6 +17,12 @@ export type ChatType = {
   createdAt: number;
   userId: string;
   gptId?: string;
+  projectId?: Id<"projects">;
+};
+
+type ProjectOption = {
+  _id: Id<"projects">;
+  name: string;
 };
 
 interface ChatRowProps {
@@ -24,15 +30,18 @@ interface ChatRowProps {
   onDelete: (id: Id<"chats">) => void;
   variant?: "default" | "project";
   highlight?: string;
+  projectOptions?: ProjectOption[];
 }
 
 export default function ChatRow({
   chat,
   onDelete,
   variant = "default",
-  highlight
+  highlight,
+  projectOptions = []
 }: ChatRowProps) {
   const renameChat = useMutation(api.chats.renameChat);
+  const moveChatToProject = useMutation(api.chats.moveChatToProject);
 
   const [isEditing, setIsEditing] = useState(false);
   const [title, setTitle] = useState(chat.title);
@@ -201,6 +210,17 @@ export default function ChatRow({
     setIsEditing(false);
   };
 
+  const handleMoveToProject = async (projectId: Id<"projects"> | null) => {
+    try {
+      await moveChatToProject({
+        chatId: chat._id,
+        projectId
+      });
+    } catch (error) {
+      console.error("Failed to move chat to project:", error);
+    }
+  };
+
   // Determine styling based on variant
   const containerClass = cn(
     "group relative transition-all duration-200",
@@ -350,6 +370,9 @@ export default function ChatRow({
           <ChatActionButtons
             onRename={() => setIsEditing(true)}
             onDelete={() => onDelete(chat._id)}
+            onMoveToProject={handleMoveToProject}
+            projectOptions={projectOptions}
+            currentProjectId={chat.projectId}
           />
         </div>
       )}

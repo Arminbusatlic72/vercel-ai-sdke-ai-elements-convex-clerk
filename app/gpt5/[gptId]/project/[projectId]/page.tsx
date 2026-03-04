@@ -204,6 +204,8 @@ import { MessageSquare, Plus } from "lucide-react";
 import Link from "next/link";
 import ProjectChatCard from "@/components/ProjectChatCard";
 import ProjectHeader from "@/components/ProjectPageHeader";
+import ProjectKnowledgeBaseCard from "@/components/project/ProjectKnowledgeBaseCard";
+import ProjectChatList from "@/components/project/ProjectChatList";
 
 interface ProjectPageProps {
   params: {
@@ -332,49 +334,23 @@ export default async function ProjectPage({
         </div>
       </div>
 
+      <div className="p-6 border-b border-gray-200 bg-white">
+        <ProjectKnowledgeBaseCard projectId={projectId} />
+      </div>
+
       <div className="flex-1 flex">
         {/* Show chat list OR chat interface */}
         {!showChatInterface ? (
           /* Chat List - Full width when no chat selected */
           <div className="flex-1 p-6">
-            {projectChats.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center">
-                <MessageSquare className="w-16 h-16 text-gray-300 mb-4" />
-                <h2 className="text-xl font-semibold text-gray-700 mb-2">
-                  No chats yet in this project
-                </h2>
-                <p className="text-gray-500 mb-6">
-                  Start a new conversation to organize it under "{project.name}"
-                </p>
-                <Link
-                  href={`/gpt5/${gptId}/project/${projectId}?new=true`}
-                  className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <Plus className="w-5 h-5" />
-                  <span className="font-medium">Create First Chat</span>
-                </Link>
-              </div>
-            ) : (
-              <div>
-                <div className="mb-6">
-                  <p className="text-sm text-gray-500 mt-1">
-                    Click on any chat to continue the conversation
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {projectChats.map((chat: any) => (
-                    <ProjectChatCard
-                      key={chat._id}
-                      chat={chat}
-                      gptId={gptId}
-                      projectId={projectId}
-                      userId={userId}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+            <ProjectChatList
+              projectId={projectId}
+              userId={userId}
+              projectName={project.name}
+              newChatHref={`/gpt5/${gptId}/project/${projectId}?new=true`}
+              routeGptId={gptId}
+              projectGptId={project.gptId || undefined}
+            />
           </div>
         ) : (
           /* Chat Interface - when a chat is selected OR new chat */

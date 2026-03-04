@@ -1,21 +1,37 @@
 "use client";
 
-import { MoreHorizontal, Trash2, Pencil } from "lucide-react";
+import { Folder, MoreHorizontal, Trash2, Pencil } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuItem
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger
 } from "@/components/ui/dropdown-menu";
+import { Id } from "@/convex/_generated/dataModel";
+
+type ProjectOption = {
+  _id: Id<"projects">;
+  name: string;
+};
 
 interface ChatActionButtonsProps {
   onRename: () => void;
   onDelete: () => void;
+  onMoveToProject: (projectId: Id<"projects"> | null) => void;
+  projectOptions: ProjectOption[];
+  currentProjectId?: Id<"projects">;
 }
 
 export function ChatActionButtons({
   onRename,
-  onDelete
+  onDelete,
+  onMoveToProject,
+  projectOptions,
+  currentProjectId
 }: ChatActionButtonsProps) {
   return (
     <DropdownMenu>
@@ -33,6 +49,41 @@ export function ChatActionButtons({
           <Pencil className="w-4 h-4 text-gray-600" />
           <span>Rename</span>
         </DropdownMenuItem>
+
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="flex items-center gap-2 cursor-pointer hover:bg-gray-50">
+            <Folder className="w-4 h-4 text-gray-600" />
+            <span>Move to Project</span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-56">
+            <DropdownMenuItem
+              onClick={() => onMoveToProject(null)}
+              disabled={!currentProjectId}
+              className="cursor-pointer"
+            >
+              Remove from project
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {projectOptions.length === 0 ? (
+              <DropdownMenuItem disabled>
+                No projects available
+              </DropdownMenuItem>
+            ) : (
+              projectOptions.map((project) => (
+                <DropdownMenuItem
+                  key={project._id}
+                  onClick={() => onMoveToProject(project._id)}
+                  disabled={project._id === currentProjectId}
+                  className="cursor-pointer"
+                >
+                  {project.name}
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+
+        <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={onDelete}
           className="flex items-center gap-2 cursor-pointer text-red-600 hover:bg-red-50"

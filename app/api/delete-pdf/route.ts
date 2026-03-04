@@ -1,26 +1,46 @@
 import { NextRequest } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { auth } from "@clerk/nextjs/server";
 
 export const runtime = "nodejs";
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 export async function POST(req: NextRequest) {
   try {
-    const { gptId, openaiFileId } = await req.json(); // ✅ Changed from fileName to openaiFileId
+    const { getToken } = await auth();
+    const convexToken =
+      (await getToken({ template: "convex" })) ??
+      (await getToken()) ??
+      undefined;
 
-    if (!gptId || !openaiFileId) {
+    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!, {
+      auth: convexToken
+    });
+
+    const { gptId, projectId, openaiFileId } = await req.json();
+
+    if ((!gptId && !projectId) || !openaiFileId) {
       return Response.json(
-        { error: "Missing gptId or openaiFileId" },
+        { error: "Missing gptId/projectId or openaiFileId" },
         { status: 400 }
       );
     }
 
-    // ✅ Call Convex mutation to remove PDF from GPT
-    await convex.mutation(api.gpts.removePdfFromGpt, {
-      gptId,
-      openaiFileId // ✅ Now matches what's being sent
-    });
+    if (projectId && !convexToken) {
+      return Response.json({ error: "Not authenticated" }, { status: 401 });
+    }
+
+    if (projectId) {
+      await convex.mutation(api.project.removePdfFromProject, {
+        projectId,
+        openaiFileId
+      });
+    } else {
+      await convex.mutation(api.gpts.removePdfFromGpt, {
+        gptId,
+        openaiFileId
+      });
+    }
 
     return Response.json({ success: true });
   } catch (error) {

@@ -245,7 +245,7 @@ import { useChatActions } from "@/lib/hooks/useChatActions";
 import { ChatActionButtons } from "@/components/ChatActionButtons";
 
 // Import Convex delete mutation
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
 type ChatType = {
@@ -297,6 +297,8 @@ export default function ProjectChatCard({
 
   // Import delete mutation
   const deleteChat = useMutation(api.chats.deleteChat);
+  const moveChatToProject = useMutation(api.chats.moveChatToProject);
+  const projects = useQuery(api.project.listProjects) ?? [];
 
   const href = `/gpt5/${gptId}/project/${projectId}?chatId=${chat._id}`;
 
@@ -370,6 +372,34 @@ export default function ProjectChatCard({
     cancel(); // Uses the cancel function from useChatActions
   };
 
+  const projectOptions = projects
+    .filter((project: any) => {
+      if (!chat.gptId) return !project.gptId;
+      return project.gptId === chat.gptId;
+    })
+    .map((project: any) => ({
+      _id: project._id,
+      name: project.name
+    }));
+
+  const handleMoveToProject = async (nextProjectId: Id<"projects"> | null) => {
+    try {
+      await moveChatToProject({
+        chatId: chat._id,
+        projectId: nextProjectId
+      });
+
+      if (nextProjectId !== projectId) {
+        setIsDeleted(true);
+        if (onDelete) {
+          onDelete(chat._id);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to move chat to project:", error);
+    }
+  };
+
   // If chat is deleted, don't render anything
   if (isDeleted) {
     return null;
@@ -394,7 +424,7 @@ export default function ProjectChatCard({
             className="block p-4 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all duration-200"
           >
             <div className="flex items-start gap-3">
-              <div className="flex-shrink-0 p-2 bg-blue-100 rounded-lg">
+              <div className="shrink-0 p-2 bg-blue-100 rounded-lg">
                 <MessageSquare className="w-5 h-5 text-blue-600" />
               </div>
 
@@ -432,6 +462,9 @@ export default function ProjectChatCard({
               <ChatActionButtons
                 onRename={startEditing}
                 onDelete={enhancedDelete}
+                onMoveToProject={handleMoveToProject}
+                projectOptions={projectOptions}
+                currentProjectId={projectId}
               />
             </div>
           )}
@@ -440,7 +473,7 @@ export default function ProjectChatCard({
         /* Edit Mode - Show input field with save/cancel buttons */
         <div className="p-4 rounded-lg border border-blue-200 bg-blue-50">
           <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 p-2 bg-blue-100 rounded-lg">
+            <div className="shrink-0 p-2 bg-blue-100 rounded-lg">
               <MessageSquare className="w-5 h-5 text-blue-600" />
             </div>
 

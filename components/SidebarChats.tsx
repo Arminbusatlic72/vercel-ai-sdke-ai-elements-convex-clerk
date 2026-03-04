@@ -7,6 +7,8 @@ import ChatRow from "./ChatRow";
 import { cn } from "@/lib/utils";
 import { useChatSearch } from "@/lib/hooks/useChatSearch";
 import { ChatType } from "./ChatRow";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 type ChatId = Id<"chats">;
 
 interface SidebarChatsProps {
@@ -35,6 +37,7 @@ export default function SidebarChats({
   } = useChatSearch({ projectId });
 
   const displayChats: ChatType[] = chats || [];
+  const projects = useQuery(api.project.listProjects) ?? [];
 
   const totalChatsCount = displayChats.length;
 
@@ -164,14 +167,27 @@ export default function SidebarChats({
 
           {!isLoading && displayChats.length > 0 && (
             <div className="space-y-1">
-              {displayChats.map((chat) => (
-                <ChatRow
-                  key={chat._id}
-                  chat={chat}
-                  onDelete={(id) => onDeleteChat(id as ChatId)}
-                  highlight={isSearchOpen ? debouncedQuery : undefined}
-                />
-              ))}
+              {displayChats.map((chat) => {
+                const projectOptions = projects
+                  .filter((project: any) => {
+                    if (!chat.gptId) return !project.gptId;
+                    return project.gptId === chat.gptId;
+                  })
+                  .map((project: any) => ({
+                    _id: project._id,
+                    name: project.name
+                  }));
+
+                return (
+                  <ChatRow
+                    key={chat._id}
+                    chat={chat}
+                    onDelete={(id) => onDeleteChat(id as ChatId)}
+                    highlight={isSearchOpen ? debouncedQuery : undefined}
+                    projectOptions={projectOptions}
+                  />
+                );
+              })}
             </div>
           )}
 

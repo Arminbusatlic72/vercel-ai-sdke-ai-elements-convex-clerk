@@ -90,7 +90,19 @@ export default defineSchema({
     name: v.string(),
     userId: v.string(), // owner
     projectId: v.optional(v.id("projects")),
-    gptId: v.optional(v.string()) // good
+    gptId: v.optional(v.string()), // good
+    vectorStoreId: v.optional(v.string()),
+    pdfFiles: v.optional(
+      v.array(
+        v.object({
+          fileName: v.string(),
+          openaiFileId: v.string(),
+          convexStorageId: v.id("_storage"),
+          fileSize: v.number(),
+          uploadedAt: v.number()
+        })
+      )
+    )
   })
     .index("by_user", ["userId"])
     .index("by_user_gpt", ["userId", "gptId"]), // ✅ important

@@ -255,6 +255,7 @@ export default function Sidebar() {
         const chatId = await createChat({
           title: `New ${selectedGptName?.trim() || gptId} chat`,
           gptId,
+          projectId: selectedProjectId ?? undefined,
           createdAt: Date.now()
         });
 
