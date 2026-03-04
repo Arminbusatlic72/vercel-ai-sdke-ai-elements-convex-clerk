@@ -75,6 +75,7 @@ export default function Sidebar() {
 
   // Mutations
   const createProject = useMutation(api.project.createProject);
+  const createChat = useMutation(api.chats.createChat);
   const deleteProject = useMutation(api.project.deleteProject);
   const deleteChat = useMutation(api.chats.deleteChat);
   const renameProject = useMutation(api.project.renameProject);
@@ -245,17 +246,50 @@ export default function Sidebar() {
     }
   }, [modalState.renameProject, renameProject, modals]);
 
-  const handleNewChat = useCallback(() => {
-    let chatUrl = "/gpt5";
+  const handleNewChat = useCallback(async () => {
+    if (gptId) {
+      try {
+        setError(null);
 
-    if (gptId) chatUrl += `/${gptId}`;
+        const selectedGptName = gpts.find((item) => item.gptId === gptId)?.name;
+        const chatId = await createChat({
+          title: `New ${selectedGptName?.trim() || gptId} chat`,
+          gptId,
+          createdAt: Date.now()
+        });
+
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem(`begun_${gptId}`, "true");
+        }
+
+        startTransition(() => {
+          router.push(`/gpt5/${gptId}/chat/${chatId}`);
+          closeMobileNav();
+        });
+        return;
+      } catch (err) {
+        setError("Failed to create chat. Please try again.");
+        console.error(err);
+        return;
+      }
+    }
+
+    let chatUrl = "/gpt5";
     if (selectedProjectId) chatUrl += `/project/${selectedProjectId}`;
 
     startTransition(() => {
       router.push(chatUrl);
       closeMobileNav();
     });
-  }, [gptId, selectedProjectId, router, closeMobileNav]);
+  }, [
+    closeMobileNav,
+    createChat,
+    gptId,
+    gpts,
+    router,
+    selectedProjectId,
+    startTransition
+  ]);
 
   const handleDeleteChat = useCallback(
     async (id: ChatId) => {

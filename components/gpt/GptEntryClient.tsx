@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -26,6 +26,10 @@ export default function GptEntryClient({ gpt }: GptEntryClientProps) {
   const router = useRouter();
   const { user, isLoaded } = useUser();
   const [isStarting, setIsStarting] = useState(false);
+  const [shouldShowBeginScreen, setShouldShowBeginScreen] = useState<
+    boolean | null
+  >(null);
+  const hasAutoStartedRef = useRef(false);
   const createChat = useMutation(api.chats.createChat);
 
   const accessResult = useQuery(
@@ -38,7 +42,7 @@ export default function GptEntryClient({ gpt }: GptEntryClientProps) {
       : "skip"
   );
 
-  const handleBegin = async () => {
+  const startChat = useCallback(async () => {
     if (!user?.id || isStarting) return;
 
     try {
@@ -53,9 +57,40 @@ export default function GptEntryClient({ gpt }: GptEntryClientProps) {
       console.error("Failed to create GPT chat:", error);
       setIsStarting(false);
     }
-  };
+  }, [createChat, gpt.gptId, gpt.name, isStarting, router, user?.id]);
 
-  if (!isLoaded || (user?.id && accessResult === undefined)) {
+  const handleBegin = useCallback(async () => {
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem(`begun_${gpt.gptId}`, "true");
+    }
+
+    await startChat();
+  }, [gpt.gptId, startChat]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const hasBegun = sessionStorage.getItem(`begun_${gpt.gptId}`) === "true";
+    setShouldShowBeginScreen(!hasBegun);
+    hasAutoStartedRef.current = false;
+  }, [gpt.gptId]);
+
+  useEffect(() => {
+    if (!isLoaded || !user?.id) return;
+    if (accessResult === undefined) return;
+    if (accessResult && !accessResult.hasAccess) return;
+    if (shouldShowBeginScreen !== false) return;
+    if (hasAutoStartedRef.current) return;
+
+    hasAutoStartedRef.current = true;
+    void startChat();
+  }, [accessResult, isLoaded, shouldShowBeginScreen, startChat, user?.id]);
+
+  if (
+    !isLoaded ||
+    shouldShowBeginScreen === null ||
+    (user?.id && accessResult === undefined)
+  ) {
     return (
       <div className="flex min-h-[calc(100dvh-8rem)] items-center justify-center px-4">
         <p className="text-sm text-muted-foreground">Loading GPT...</p>
@@ -76,6 +111,14 @@ export default function GptEntryClient({ gpt }: GptEntryClientProps) {
             <Link href="/subscribe">View plans</Link>
           </Button>
         </div>
+      </div>
+    );
+  }
+
+  if (shouldShowBeginScreen === false) {
+    return (
+      <div className="flex min-h-[calc(100dvh-8rem)] items-center justify-center px-4">
+        <p className="text-sm text-muted-foreground">Starting chat...</p>
       </div>
     );
   }

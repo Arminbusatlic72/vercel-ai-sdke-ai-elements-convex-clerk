@@ -32,6 +32,7 @@ describe("GptEntryClient", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
 
     vi.mocked(useRouter).mockReturnValue({
       push
@@ -82,6 +83,26 @@ describe("GptEntryClient", () => {
         gptId: "demo-gpt"
       })
     );
+
+    await waitFor(() => {
+      expect(push).toHaveBeenCalledWith("/gpt5/demo-gpt/chat/chat_abc");
+    });
+
+    expect(window.sessionStorage.getItem("begun_demo-gpt")).toBe("true");
+  });
+
+  it("skips Begin screen and auto-starts chat when begun flag exists in sessionStorage", async () => {
+    window.sessionStorage.setItem("begun_demo-gpt", "true");
+
+    render(<GptEntryClient gpt={gpt} />);
+
+    expect(
+      screen.queryByRole("button", { name: /begin chat/i })
+    ).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(createChat).toHaveBeenCalledTimes(1);
+    });
 
     await waitFor(() => {
       expect(push).toHaveBeenCalledWith("/gpt5/demo-gpt/chat/chat_abc");
