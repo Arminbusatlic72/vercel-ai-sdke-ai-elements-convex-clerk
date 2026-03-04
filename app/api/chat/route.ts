@@ -6,6 +6,7 @@ import {
 } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
+import { auth } from "@clerk/nextjs/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { shouldUseRAG } from "@/lib/ai-optimization";
@@ -294,6 +295,11 @@ function isLowComplexityMessage(text: string) {
 export async function POST(req: Request) {
   try {
     const requestStartedAt = Date.now();
+    const { userId, getToken } = await auth();
+    const convexToken =
+      (await getToken({ template: "convex" })) ??
+      (await getToken()) ??
+      undefined;
 
     const idempotencyKey = req.headers.get("x-idempotency-key");
     if (idempotencyKey) {
@@ -624,13 +630,78 @@ export async function POST(req: Request) {
           : Promise.resolve();
 
         // Background title generation (non-blocking; no auth mutation here)
+        const existingChat =
+          resolvedChatId && userId
+            ? await convex.query(api.chats.getChat, {
+                id: resolvedChatId,
+                userId
+              })
+            : null;
+
+        const existingTitle =
+          typeof existingChat?.title === "string"
+            ? existingChat.title.trim()
+            : "";
+
+        const hasPlaceholderTitle =
+          /^new(?:\s.+)?\schat$/i.test(existingTitle) ||
+          existingTitle.toLowerCase() === "new chat";
+
+        const initialMessageTitleFromLatest =
+          latestUserText.slice(0, 50) +
+          (latestUserText.length > 50 ? "..." : "");
+
+        const normalizedExistingTitle = existingTitle.toLowerCase();
+        const normalizedLatestUserText = latestUserText.trim().toLowerCase();
+
+        const looksLikeTruncatedInitialTitle =
+          existingTitle.length >= 20 &&
+          existingTitle.length <= 60 &&
+          !!normalizedLatestUserText &&
+          normalizedLatestUserText.startsWith(normalizedExistingTitle);
+
+        const hasInitialMessageTitle =
+          existingTitle === initialMessageTitleFromLatest ||
+          looksLikeTruncatedInitialTitle;
+
+        const nonBeginUserMessageCount = (messages || []).filter(
+          (message: any) =>
+            message?.role === "user" &&
+            extractMessageText(message).trim() !== "__begin__"
+        ).length;
+
         const titleTask =
-          latestUserText && messages.length <= 2 && !isBeginTrigger
+          (hasPlaceholderTitle || hasInitialMessageTitle) &&
+          latestUserText &&
+          nonBeginUserMessageCount === 1 &&
+          !isBeginTrigger
             ? generateChatTitle(
                 latestUserText,
-                openaiClient("gpt-5-mini")
+                openaiClient("gpt-4o-mini")
               ).catch(() => "")
             : Promise.resolve("");
+
+        const titlePersistenceTask = resolvedChatId
+          ? titleTask.then(async (generatedTitle) => {
+              const nextTitle =
+                typeof generatedTitle === "string" ? generatedTitle.trim() : "";
+              if (!nextTitle) return;
+
+              if (!convexToken) return;
+
+              const authedConvex = new ConvexHttpClient(
+                process.env.NEXT_PUBLIC_CONVEX_URL!,
+                {
+                  auth: convexToken
+                }
+              );
+
+              await authedConvex.mutation(api.chats.updateChatTitle, {
+                id: resolvedChatId,
+                title: nextTitle
+              });
+            })
+          : Promise.resolve();
 
         // Tool setup warm-up / RAG prep after stream starts
         const toolWarmupTask =
@@ -678,6 +749,7 @@ export async function POST(req: Request) {
         await Promise.allSettled([
           persistenceTask,
           titleTask,
+          titlePersistenceTask,
           toolWarmupTask,
           summarizeTask
         ]);
