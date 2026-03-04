@@ -483,8 +483,7 @@ export function useAiChat({
         ]
       );
       return (
-        text.trim() !== "__begin__" &&
-        text.trim() !== BEGIN_INTERNAL_PROMPT
+        text.trim() !== "__begin__" && text.trim() !== BEGIN_INTERNAL_PROMPT
       );
     }),
     groupedModels,
