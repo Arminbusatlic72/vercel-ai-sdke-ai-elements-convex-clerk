@@ -372,11 +372,10 @@ export default function ProjectChatCard({
     cancel(); // Uses the cancel function from useChatActions
   };
 
-  const projectOptions = projects
-    .map((project: any) => ({
-      _id: project._id,
-      name: project.name
-    }));
+  const projectOptions = projects.map((project: any) => ({
+    _id: project._id,
+    name: project.name
+  }));
 
   const handleMoveToProject = async (nextProjectId: Id<"projects"> | null) => {
     try {

@@ -168,11 +168,10 @@ export default function SidebarChats({
           {!isLoading && displayChats.length > 0 && (
             <div className="space-y-1">
               {displayChats.map((chat) => {
-                const projectOptions = projects
-                  .map((project: any) => ({
-                    _id: project._id,
-                    name: project.name
-                  }));
+                const projectOptions = projects.map((project: any) => ({
+                  _id: project._id,
+                  name: project.name
+                }));
 
                 return (
                   <ChatRow
