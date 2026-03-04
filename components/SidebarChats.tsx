@@ -169,10 +169,6 @@ export default function SidebarChats({
             <div className="space-y-1">
               {displayChats.map((chat) => {
                 const projectOptions = projects
-                  .filter((project: any) => {
-                    if (!chat.gptId) return !project.gptId;
-                    return project.gptId === chat.gptId;
-                  })
                   .map((project: any) => ({
                     _id: project._id,
                     name: project.name

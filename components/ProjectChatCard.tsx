@@ -373,10 +373,6 @@ export default function ProjectChatCard({
   };
 
   const projectOptions = projects
-    .filter((project: any) => {
-      if (!chat.gptId) return !project.gptId;
-      return project.gptId === chat.gptId;
-    })
     .map((project: any) => ({
       _id: project._id,
       name: project.name
