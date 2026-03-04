@@ -8,6 +8,9 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { extractMessageText } from "@/lib/message";
 import { preprocessCodeInput } from "@/lib/code-detector";
 
+const BEGIN_INTERNAL_PROMPT =
+  "Start this conversation with one concise, friendly opening message and a brief note about how you can help.";
+
 export interface ModelConfig {
   name: string;
   value: string;
@@ -137,10 +140,13 @@ export function useAiChat({
     return { modelMap: map, groupedModels: groups };
   }, [models]);
 
-  const hasBeginParam = searchParams?.get("begin") === "true";
+  const hasBeginParam =
+    searchParams?.get("begin") === "true" ||
+    (typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("begin") === "true");
 
   useEffect(() => {
-    if (!initialChatId || !gptId) return;
+    if (!initialChatId) return;
     if (initialMessages.length > 0) return;
     if (messages.length > 0) return;
     if (status === "streaming" || status === "submitted") return;
@@ -153,30 +159,34 @@ export function useAiChat({
     const provider = modelMap.get(model)?.provider || "google";
     const idempotencyKey = createIdempotencyKey(initialChatId, "__begin__");
 
-    void sendMessage(
-      { text: "__begin__" },
-      {
-        body: {
-          chatId: initialChatId,
-          gptId,
-          model,
-          provider,
-          webSearch: false
-        },
-        headers: {
-          "x-idempotency-key": idempotencyKey
+    void (async () => {
+      try {
+        await sendMessage(
+          { text: "__begin__" },
+          {
+            body: {
+              chatId: initialChatId,
+              gptId,
+              model,
+              provider,
+              webSearch: false
+            },
+            headers: {
+              "x-idempotency-key": idempotencyKey
+            }
+          }
+        );
+      } finally {
+        if (pathname) {
+          const params = new URLSearchParams(searchParams?.toString() ?? "");
+          params.delete("begin");
+          const nextUrl = params.toString()
+            ? `${pathname}?${params.toString()}`
+            : pathname;
+          router.replace(nextUrl, { scroll: false });
         }
       }
-    );
-
-    if (pathname) {
-      const params = new URLSearchParams(searchParams?.toString() ?? "");
-      params.delete("begin");
-      const nextUrl = params.toString()
-        ? `${pathname}?${params.toString()}`
-        : pathname;
-      router.replace(nextUrl, { scroll: false });
-    }
+    })();
   }, [
     hasBeginParam,
     initialChatId,
@@ -472,7 +482,10 @@ export function useAiChat({
           }
         ]
       );
-      return text.trim() !== "__begin__";
+      return (
+        text.trim() !== "__begin__" &&
+        text.trim() !== BEGIN_INTERNAL_PROMPT
+      );
     }),
     groupedModels,
     modelMap,

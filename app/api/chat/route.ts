@@ -31,6 +31,8 @@ const SUMMARY_TURN_THRESHOLD = 8;
 const SUMMARY_RECENT_WINDOW = 4;
 const SUMMARY_MAX_CACHE_AGE_MS = 10 * 60 * 1000;
 const IDEMPOTENCY_WINDOW_MS = 10_000;
+const BEGIN_INTERNAL_PROMPT =
+  "Start this conversation with one concise, friendly opening message and a brief note about how you can help.";
 
 let generalSettingsCache:
   | {
@@ -477,7 +479,7 @@ export async function POST(req: Request) {
             parts: [
               {
                 type: "text",
-                text: "Start this conversation with one concise, friendly opening message and a brief note about how you can help."
+                text: BEGIN_INTERNAL_PROMPT
               }
             ]
           }
@@ -617,6 +619,8 @@ export async function POST(req: Request) {
                   const content = extractMessageText(message);
                   if (!content) return Promise.resolve();
                   if (content.trim() === "__begin__") return Promise.resolve();
+                  if (content.trim() === BEGIN_INTERNAL_PROMPT)
+                    return Promise.resolve();
                   return convex.mutation(api.messages.storeMessage, {
                     chatId: resolvedChatId,
                     content,
@@ -667,7 +671,8 @@ export async function POST(req: Request) {
         const nonBeginUserMessageCount = (messages || []).filter(
           (message: any) =>
             message?.role === "user" &&
-            extractMessageText(message).trim() !== "__begin__"
+            extractMessageText(message).trim() !== "__begin__" &&
+            extractMessageText(message).trim() !== BEGIN_INTERNAL_PROMPT
         ).length;
 
         const titleTask =

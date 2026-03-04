@@ -142,7 +142,14 @@ describe("chat route __begin__ behavior", () => {
       (call) => call[1]?.content === "__begin__"
     );
 
+    const persistedInternalBeginPrompt = mocks.convexMutation.mock.calls.some(
+      (call) =>
+        call[1]?.content ===
+        "Start this conversation with one concise, friendly opening message and a brief note about how you can help."
+    );
+
     expect(persistedBegin).toBe(false);
+    expect(persistedInternalBeginPrompt).toBe(false);
     expect(mocks.generateChatTitle).not.toHaveBeenCalled();
   });
 
