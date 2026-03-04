@@ -42,7 +42,7 @@ export default function GptEntryClient({ gpt }: GptEntryClientProps) {
       : "skip"
   );
 
-  const startChat = useCallback(async () => {
+  const startChat = useCallback(async (fromBeginScreen: boolean) => {
     if (!user?.id || isStarting) return;
 
     try {
@@ -52,7 +52,8 @@ export default function GptEntryClient({ gpt }: GptEntryClientProps) {
         gptId: gpt.gptId,
         createdAt: Date.now()
       });
-      router.push(`/gpt5/${gpt.gptId}/chat/${chatId}`);
+      const beginQuery = fromBeginScreen ? "?begin=true" : "";
+      router.push(`/gpt5/${gpt.gptId}/chat/${chatId}${beginQuery}`);
     } catch (error) {
       console.error("Failed to create GPT chat:", error);
       setIsStarting(false);
@@ -64,7 +65,7 @@ export default function GptEntryClient({ gpt }: GptEntryClientProps) {
       sessionStorage.setItem(`begun_${gpt.gptId}`, "true");
     }
 
-    await startChat();
+    await startChat(true);
   }, [gpt.gptId, startChat]);
 
   useEffect(() => {
@@ -83,7 +84,7 @@ export default function GptEntryClient({ gpt }: GptEntryClientProps) {
     if (hasAutoStartedRef.current) return;
 
     hasAutoStartedRef.current = true;
-    void startChat();
+    void startChat(false);
   }, [accessResult, isLoaded, shouldShowBeginScreen, startChat, user?.id]);
 
   if (

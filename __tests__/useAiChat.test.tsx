@@ -2,6 +2,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useChat } from "@ai-sdk/react";
 import { useMutation } from "convex/react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAiChat } from "../lib/hooks/useAiChat";
 
 vi.mock("@ai-sdk/react", () => ({
@@ -12,12 +13,19 @@ vi.mock("convex/react", () => ({
   useMutation: vi.fn()
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: vi.fn(),
+  usePathname: vi.fn(),
+  useSearchParams: vi.fn()
+}));
+
 describe("useAiChat", () => {
   const createChat = vi.fn();
   const storeMessage = vi.fn();
   const updateChatModel = vi.fn();
   const sendMessage = vi.fn();
   const setMessages = vi.fn();
+  const replace = vi.fn();
 
   const models = [{ name: "GPT", value: "gpt-4o-mini", provider: "openai" }];
 
@@ -35,9 +43,19 @@ describe("useAiChat", () => {
       status: "idle",
       setMessages
     } as unknown as ReturnType<typeof useChat>);
+
+    vi.mocked(useRouter).mockReturnValue({
+      replace
+    } as unknown as ReturnType<typeof useRouter>);
+    vi.mocked(usePathname).mockReturnValue("/gpt5/demo-gpt/chat/chat_1");
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams("begin=true") as unknown as ReturnType<
+        typeof useSearchParams
+      >
+    );
   });
 
-  it("auto-sends __begin__ once for new empty GPT chat", async () => {
+  it("auto-sends __begin__ once for new empty GPT chat only when begin=true is present", async () => {
     const { rerender } = renderHook(() =>
       useAiChat({
         chatId: "chat_1" as any,
@@ -68,6 +86,29 @@ describe("useAiChat", () => {
 
     rerender();
     expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith("/gpt5/demo-gpt/chat/chat_1", {
+      scroll: false
+    });
+  });
+
+  it("does not auto-send __begin__ when begin=true query param is missing", async () => {
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams("") as unknown as ReturnType<typeof useSearchParams>
+    );
+
+    renderHook(() =>
+      useAiChat({
+        chatId: "chat_1" as any,
+        gptId: "demo-gpt",
+        initialMessages: [],
+        models,
+        defaultModel: "gpt-4o-mini"
+      })
+    );
+
+    await Promise.resolve();
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it("does not auto-send __begin__ when initial messages already exist", async () => {

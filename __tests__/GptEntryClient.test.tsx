@@ -85,7 +85,7 @@ describe("GptEntryClient", () => {
     );
 
     await waitFor(() => {
-      expect(push).toHaveBeenCalledWith("/gpt5/demo-gpt/chat/chat_abc");
+      expect(push).toHaveBeenCalledWith("/gpt5/demo-gpt/chat/chat_abc?begin=true");
     });
 
     expect(window.sessionStorage.getItem("begun_demo-gpt")).toBe("true");

@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useChat } from "@ai-sdk/react";
 import { useMutation } from "convex/react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { extractMessageText } from "@/lib/message";
@@ -43,6 +44,9 @@ export function useAiChat({
   );
   const [webSearch, setWebSearch] = useState(false);
   const [initialLoaded, setInitialLoaded] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   // --- Refs ---
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -133,11 +137,14 @@ export function useAiChat({
     return { modelMap: map, groupedModels: groups };
   }, [models]);
 
+  const hasBeginParam = searchParams?.get("begin") === "true";
+
   useEffect(() => {
     if (!initialChatId || !gptId) return;
     if (initialMessages.length > 0) return;
     if (messages.length > 0) return;
     if (status === "streaming" || status === "submitted") return;
+    if (!hasBeginParam) return;
 
     const chatKey = String(initialChatId);
     if (autoBeginTriggeredForChatRef.current === chatKey) return;
@@ -161,7 +168,15 @@ export function useAiChat({
         }
       }
     );
+
+    if (pathname) {
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      params.delete("begin");
+      const nextUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+      router.replace(nextUrl, { scroll: false });
+    }
   }, [
+    hasBeginParam,
     initialChatId,
     gptId,
     initialMessages.length,
@@ -170,7 +185,10 @@ export function useAiChat({
     model,
     modelMap,
     sendMessage,
-    createIdempotencyKey
+    createIdempotencyKey,
+    pathname,
+    router,
+    searchParams
   ]);
 
   // --- Save new messages to DB ---
