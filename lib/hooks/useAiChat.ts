@@ -172,7 +172,9 @@ export function useAiChat({
     if (pathname) {
       const params = new URLSearchParams(searchParams?.toString() ?? "");
       params.delete("begin");
-      const nextUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+      const nextUrl = params.toString()
+        ? `${pathname}?${params.toString()}`
+        : pathname;
       router.replace(nextUrl, { scroll: false });
     }
   }, [

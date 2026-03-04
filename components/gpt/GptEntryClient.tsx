@@ -42,23 +42,26 @@ export default function GptEntryClient({ gpt }: GptEntryClientProps) {
       : "skip"
   );
 
-  const startChat = useCallback(async (fromBeginScreen: boolean) => {
-    if (!user?.id || isStarting) return;
+  const startChat = useCallback(
+    async (fromBeginScreen: boolean) => {
+      if (!user?.id || isStarting) return;
 
-    try {
-      setIsStarting(true);
-      const chatId = await createChat({
-        title: `New ${gpt.name?.trim() || gpt.gptId} chat`,
-        gptId: gpt.gptId,
-        createdAt: Date.now()
-      });
-      const beginQuery = fromBeginScreen ? "?begin=true" : "";
-      router.push(`/gpt5/${gpt.gptId}/chat/${chatId}${beginQuery}`);
-    } catch (error) {
-      console.error("Failed to create GPT chat:", error);
-      setIsStarting(false);
-    }
-  }, [createChat, gpt.gptId, gpt.name, isStarting, router, user?.id]);
+      try {
+        setIsStarting(true);
+        const chatId = await createChat({
+          title: `New ${gpt.name?.trim() || gpt.gptId} chat`,
+          gptId: gpt.gptId,
+          createdAt: Date.now()
+        });
+        const beginQuery = fromBeginScreen ? "?begin=true" : "";
+        router.push(`/gpt5/${gpt.gptId}/chat/${chatId}${beginQuery}`);
+      } catch (error) {
+        console.error("Failed to create GPT chat:", error);
+        setIsStarting(false);
+      }
+    },
+    [createChat, gpt.gptId, gpt.name, isStarting, router, user?.id]
+  );
 
   const handleBegin = useCallback(async () => {
     if (typeof window !== "undefined") {
