@@ -178,7 +178,7 @@ export default function ProjectKnowledgeBaseCard({
 
       <div className="space-y-3">
         {project.pdfFiles?.length ? (
-          project.pdfFiles.map((pdf) => (
+          project.pdfFiles.map((pdf: any) => (
             <div
               key={pdf.openaiFileId}
               className="group flex items-center justify-between p-3 bg-gray-50 hover:bg-blue-50 rounded-lg transition-colors"

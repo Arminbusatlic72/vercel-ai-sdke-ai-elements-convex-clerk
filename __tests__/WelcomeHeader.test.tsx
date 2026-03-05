@@ -14,8 +14,8 @@ vi.mock("convex/react", () => ({
 
 vi.mock("@/convex/_generated/api", () => ({
   api: {
-    packages: {
-      getPackageByProductId: "packages/getPackageByProductId"
+    subscriptions: {
+      getUserSubscriptions: "subscriptions/getUserSubscriptions"
     }
   }
 }));
@@ -53,14 +53,17 @@ describe("WelcomeHeader", () => {
       />
     );
 
-    expect(screen.getByText("Plan: StoryEngine")).toBeInTheDocument();
-    expect(screen.queryByText("Plan: No active plan")).not.toBeInTheDocument();
+    expect(screen.getByText("Packages:")).toBeInTheDocument();
+    expect(screen.getByText("StoryEngine")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Packages: No active plan")
+    ).not.toBeInTheDocument();
   });
 
   it("shows pkg.name once query resolves successfully", () => {
-    vi.mocked(useQuery).mockReturnValue({
-      name: "Speculative Futures Toolkit"
-    });
+    vi.mocked(useQuery).mockReturnValue([
+      { packageName: "Speculative Futures Toolkit" }
+    ]);
 
     render(
       <WelcomeHeader
@@ -73,13 +76,12 @@ describe("WelcomeHeader", () => {
       />
     );
 
-    expect(
-      screen.getByText("Plan: Speculative Futures Toolkit")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Packages:")).toBeInTheDocument();
+    expect(screen.getByText("Speculative Futures Toolkit")).toBeInTheDocument();
   });
 
   it("shows 'No active plan' only when pkg resolves to null", () => {
-    vi.mocked(useQuery).mockReturnValue(null);
+    vi.mocked(useQuery).mockReturnValue([]);
 
     render(
       <WelcomeHeader
@@ -96,7 +98,7 @@ describe("WelcomeHeader", () => {
       />
     );
 
-    expect(screen.getByText("Plan: No active plan")).toBeInTheDocument();
+    expect(screen.getByText("Packages: No active plan")).toBeInTheDocument();
   });
 
   it("never shows 'No active plan' during loading state", () => {
@@ -113,12 +115,15 @@ describe("WelcomeHeader", () => {
       />
     );
 
-    expect(screen.getByText("Plan: Loading label")).toBeInTheDocument();
-    expect(screen.queryByText("Plan: No active plan")).not.toBeInTheDocument();
+    expect(screen.getByText("Packages:")).toBeInTheDocument();
+    expect(screen.getByText("Loading label")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Packages: No active plan")
+    ).not.toBeInTheDocument();
   });
 
   it("renders correctly when subscription productId is missing/null", () => {
-    vi.mocked(useQuery).mockReturnValue(undefined);
+    vi.mocked(useQuery).mockReturnValue([]);
 
     render(
       <WelcomeHeader
@@ -133,10 +138,32 @@ describe("WelcomeHeader", () => {
 
     expect(screen.getByText("Welcome, Test User 👋")).toBeInTheDocument();
     expect(screen.getByText("Role: MEMBER")).toBeInTheDocument();
-    expect(screen.getByText("Plan: No active plan")).toBeInTheDocument();
+    expect(screen.getByText("Packages: No active plan")).toBeInTheDocument();
     expect(useQuery).toHaveBeenCalledWith(
-      "packages/getPackageByProductId",
-      "skip"
+      "subscriptions/getUserSubscriptions",
+      {}
     );
+  });
+
+  it("shows accumulated plans when user has multiple active subscriptions", () => {
+    vi.mocked(useQuery).mockReturnValue([
+      { packageName: "Plan Alpha" },
+      { packageName: "Plan Beta" }
+    ]);
+
+    render(
+      <WelcomeHeader
+        data={{
+          role: "member",
+          planLabel: "Fallback",
+          aiCredits: 42,
+          subscription: { productId: "prod_123", status: "active", plan: "x" }
+        }}
+      />
+    );
+
+    expect(screen.getByText("Packages:")).toBeInTheDocument();
+    expect(screen.getByText("Plan Alpha")).toBeInTheDocument();
+    expect(screen.getByText("Plan Beta")).toBeInTheDocument();
   });
 });

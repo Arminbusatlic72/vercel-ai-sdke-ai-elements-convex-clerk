@@ -1,15 +1,20 @@
 // components/subscribe/PackageCard.tsx
 import { Package } from "@/lib/types";
+import { PackageGptPreview } from "@/components/subscriptions/PackageGptPreview";
 
 interface PackageCardProps {
   package: Package;
   isSelected: boolean;
+  isAtLimit?: boolean;
+  isAlreadySubscribed?: boolean;
   onSelect: () => void;
 }
 
 export default function PackageCard({
   package: pkg,
   isSelected,
+  isAtLimit = false,
+  isAlreadySubscribed = false,
   onSelect
 }: PackageCardProps) {
   const formatPrice = () => {
@@ -31,6 +36,15 @@ export default function PackageCard({
     return `${formatted}${recurring}`;
   };
 
+  const isBlocked = isAtLimit || isAlreadySubscribed;
+  const buttonLabel = isAlreadySubscribed
+    ? "Already subscribed ✓"
+    : isAtLimit
+      ? "Limit reached"
+      : isSelected
+        ? "Selected"
+        : "Subscribe";
+
   return (
     <div
       className={`border rounded-xl p-6 cursor-pointer transition-all h-full flex flex-col ${
@@ -38,7 +52,14 @@ export default function PackageCard({
           ? "border-black-500 ring-2 ring-black-200 bg-black-50"
           : "border-black-200 hover:border-gray-300 hover:shadow-md"
       } ${pkg.description ? "border-2 border-black-400" : ""}`}
-      onClick={onSelect}
+      onClick={isBlocked ? undefined : onSelect}
+      title={
+        isAtLimit
+          ? "You have reached the maximum of 6 active subscriptions."
+          : isAlreadySubscribed
+            ? "You already have an active subscription for this package."
+            : undefined
+      }
     >
       {pkg.description && (
         <div className="mb-4">
@@ -75,7 +96,7 @@ export default function PackageCard({
             {pkg.features?.slice(0, 3).map((feature, idx) => (
               <div key={idx} className="flex items-start">
                 <svg
-                  className="w-4 h-4 text-green-500 mt-0.5 mr-2 flex-shrink-0"
+                  className="w-4 h-4 text-green-500 mt-0.5 mr-2 shrink-0"
                   fill="currentColor"
                   viewBox="0 0 20 20"
                 >
@@ -95,17 +116,37 @@ export default function PackageCard({
             )}
           </div>
         </div>
+
+        <div className="mb-6">
+          <p className="text-sm font-medium text-gray-700 mb-2">
+            Included GPTs:
+          </p>
+          <PackageGptPreview packageId={pkg._id} maxVisible={4} />
+        </div>
       </div>
 
       <button
+        type="button"
+        disabled={isBlocked}
         className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
-          isSelected
-            ? "bg-blue-600 text-white hover:bg-blue-700"
-            : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+          isAlreadySubscribed
+            ? "bg-green-100 text-green-700 cursor-not-allowed"
+            : isBlocked
+              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+              : isSelected
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "bg-gray-100 text-gray-800 hover:bg-gray-200"
         }`}
-        onClick={onSelect}
+        onClick={isBlocked ? undefined : onSelect}
+        title={
+          isAtLimit
+            ? "You have reached the maximum of 6 active subscriptions."
+            : isAlreadySubscribed
+              ? "You already have an active subscription for this package."
+              : undefined
+        }
       >
-        {isSelected ? "Selected" : "Select Plan"}
+        {buttonLabel}
       </button>
     </div>
   );

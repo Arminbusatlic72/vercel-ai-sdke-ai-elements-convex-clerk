@@ -9,6 +9,13 @@ export const runtime = "nodejs";
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
+type WebhookHandlerResult = {
+  success: boolean;
+  errorCode?: string;
+  message?: string;
+  statusCode?: number;
+};
+
 // ✅ STEP 1: Verify Stripe Signature
 async function verifyStripeSignature(
   body: Buffer,
@@ -63,7 +70,18 @@ export async function POST(request: Request) {
       console.warn("Failed to record webhook event:", e);
     }
 
-    return NextResponse.json({ received: result.success });
+    if (!result.success) {
+      return NextResponse.json(
+        {
+          received: false,
+          error: result.errorCode ?? "WEBHOOK_FAILED",
+          message: result.message ?? "Webhook handling failed"
+        },
+        { status: result.statusCode ?? 400 }
+      );
+    }
+
+    return NextResponse.json({ received: true });
   } catch (error: any) {
     console.error(`❌ Webhook error: ${error.message}`);
     return NextResponse.json({ error: error.message }, { status: 400 });
@@ -71,7 +89,9 @@ export async function POST(request: Request) {
 }
 
 // ✅ STEP 3: Event Router
-async function handleStripeEvent(event: Stripe.Event) {
+async function handleStripeEvent(
+  event: Stripe.Event
+): Promise<WebhookHandlerResult> {
   switch (event.type) {
     case "checkout.session.completed":
       return await handleCheckoutSessionCompleted(
@@ -302,22 +322,53 @@ async function syncAllSubscriptionUpdates(
     console.log(`    📅 Trial ends: ${new Date(trialEndDate).toISOString()}`);
   }
 
-  await convex.mutation(api.subscriptions.syncSubscriptionFromStripe, {
+  let packageData: any = undefined;
+
+  if (productId) {
+    const pkg = await convex.query(api.packages.getPackageByProductId, {
+      stripeProductId: productId
+    });
+
+    if (pkg) {
+      const allGpts = await convex.query(api.gpts.listGpts, {});
+      const gptIds = allGpts
+        .filter((gpt: any) => gpt.packageId === pkg._id)
+        .map((gpt: any) => gpt.gptId);
+
+      packageData = {
+        packageId: pkg._id,
+        packageName: pkg.name,
+        planType: pkg.key,
+        maxGpts: overrides?.maxGpts ?? pkg.maxGpts,
+        gptIds,
+        productName: pkg.name
+      };
+    }
+  }
+
+  console.log(
+    "[webhook] upsertSubscription called for clerkUserId:",
+    clerkUserId
+  );
+
+  await convex.mutation(api.subscriptions.upsertSubscription, {
     clerkUserId,
-    stripeSubscriptionId: subscription.id,
-    stripeCustomerId: customerId,
-    status,
-    productId,
-    priceId,
-    currentPeriodStart: subscription.items.data[0].current_period_start * 1000,
-    currentPeriodEnd: subscription.items.data[0].current_period_end * 1000,
-    cancelAtPeriodEnd: subscription.cancel_at_period_end,
-    // Override fields (only set if provided)
-    trialEndDate: overrides?.trialEndDate,
-    lastPaymentFailedAt: overrides?.lastPaymentFailedAt,
-    paymentFailureGracePeriodEnd: overrides?.paymentFailureGracePeriodEnd,
-    maxGpts: overrides?.maxGpts,
-    canceledAt: overrides?.canceledAt
+    stripeData: {
+      stripeSubscriptionId: subscription.id,
+      stripeCustomerId: customerId,
+      status,
+      productId,
+      priceId,
+      currentPeriodStart:
+        subscription.items.data[0].current_period_start * 1000,
+      currentPeriodEnd: subscription.items.data[0].current_period_end * 1000,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      trialEndDate: overrides?.trialEndDate,
+      lastPaymentFailedAt: overrides?.lastPaymentFailedAt,
+      paymentFailureGracePeriodEnd: overrides?.paymentFailureGracePeriodEnd,
+      canceledAt: overrides?.canceledAt
+    },
+    packageData
   });
 
   console.log(`  ✅ Subscription synced`);
@@ -338,7 +389,20 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
     return { success: true };
   }
 
-  await syncAllSubscriptionUpdates(clerkUserId, subscription);
+  try {
+    await syncAllSubscriptionUpdates(clerkUserId, subscription);
+  } catch (error: any) {
+    const raw = JSON.stringify(error);
+    if (raw.includes("MAX_SUBSCRIPTIONS_REACHED")) {
+      return {
+        success: false,
+        statusCode: 409,
+        errorCode: "MAX_SUBSCRIPTIONS_REACHED",
+        message: "Maximum of 6 active subscriptions reached"
+      };
+    }
+    throw error;
+  }
 
   return { success: true };
 }
@@ -356,25 +420,21 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     return { success: true };
   }
 
-  // True cancellation: downgrade user, clear gptIds, maxGpts=0
-  await syncAllSubscriptionUpdates(clerkUserId, subscription, {
+  await convex.mutation(api.subscriptions.cancelSubscription, {
+    stripeSubscriptionId: subscription.id,
     status: "canceled",
-    maxGpts: 0,
     canceledAt: Date.now()
   });
 
-  console.log(`  🔴 User downgraded to free plan`);
+  console.log(`  ✅ Subscription marked canceled`);
   return { success: true };
 }
 
+// Handle invoice payment succeeded
 async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
-  console.log(`💰 handleInvoicePaymentSucceeded: ${invoice.id}`);
+  console.log(`✅ handleInvoicePaymentSucceeded: ${invoice.id}`);
 
-  // Extract subscription ID (multiple paths for different API versions)
-  let subscriptionId =
-    ((invoice as any).parent?.subscription_details?.subscription as string) ||
-    ((invoice as any).subscription as string) ||
-    (invoice.lines?.data.find((l) => l.subscription)?.subscription as string);
+  const subscriptionId = invoice.lines.data[0]?.subscription as string | null;
 
   if (!subscriptionId) {
     console.log(`  ℹ️ No subscription found on invoice — skipping`);

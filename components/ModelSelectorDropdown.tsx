@@ -54,6 +54,10 @@ export default function ModelSelectorDropdown() {
   // Get user data
   const userData = useQuery(api.users.getCurrentUser);
   const isAdmin = userData?.role === "admin";
+  const userSubscriptions = useQuery(
+    api.subscriptions.getUserSubscriptions,
+    {}
+  );
 
   // Get subscription GPTs (only shows GPTs from user's active subscription)
   const subscriptionGpts = (useQuery(api.gptAccess.getUserAccessibleGpts) ||
@@ -115,6 +119,12 @@ export default function ModelSelectorDropdown() {
 
   // Create dynamic links from available GPTs
   const sourceGpts: GPTConfig[] = isAdmin ? allGPTs : subscriptionGpts;
+  const hasActiveSubscriptions = (userSubscriptions?.length ?? 0) > 0;
+
+  const getGptLabel = (gptId: string) => {
+    const match = sourceGpts.find((gpt) => gpt.gptId === gptId);
+    return match?.name || formatGptTitle(gptId);
+  };
 
   // ✅ UPDATE: Include description in dynamic links
   const dynamicLinks = sourceGpts.map((gpt) => ({
@@ -278,22 +288,25 @@ export default function ModelSelectorDropdown() {
         )}
 
         {/* Show empty state if no subscription (non-admin users) */}
-        {!isAdmin && dynamicLinks.length === 0 && !userData?.subscription && (
-          <div className="px-4 py-6 text-center">
-            <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-              <Cpu className="w-6 h-6 text-gray-400" />
+        {!isAdmin &&
+          dynamicLinks.length === 0 &&
+          userSubscriptions !== undefined &&
+          userSubscriptions.length === 0 && (
+            <div className="px-4 py-6 text-center">
+              <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Cpu className="w-6 h-6 text-gray-400" />
+              </div>
+              <p className="text-sm text-gray-600 mb-2">
+                No subscription plan active
+              </p>
+              <Link
+                href="/subscribe"
+                className="text-sm font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1"
+              >
+                View Plans <ExternalLink className="w-3 h-3" />
+              </Link>
             </div>
-            <p className="text-sm text-gray-600 mb-2">
-              No subscription plan active
-            </p>
-            <Link
-              href="/subscribe"
-              className="text-sm font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1"
-            >
-              View Plans <ExternalLink className="w-3 h-3" />
-            </Link>
-          </div>
-        )}
+          )}
 
         <DropdownMenuSeparator className="h-px bg-gray-200" />
 
@@ -319,41 +332,55 @@ export default function ModelSelectorDropdown() {
         )}
 
         {/* Plan Information */}
-        {userData?.subscription &&
-          userData.subscription.status === "active" && (
-            <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
+        {!isAdmin && hasActiveSubscriptions && (
+          <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-gray-700">
-                    Plan: {userData.subscription.productName || "Active Plan"}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {dynamicLinks.length} GPTs available
-                  </p>
-                </div>
-                <div className="flex flex-col items-end gap-1">
-                  {userData.subscription.status === "active" && (
-                    <span className="text-xs font-medium bg-blue-100 text-blue-700 px-2 py-1 rounded">
-                      Active
-                    </span>
-                  )}
-                </div>
+                <p className="text-xs font-medium text-gray-700">
+                  Active Packages ({userSubscriptions?.length})
+                </p>
+                <span className="text-xs font-medium bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                  Active
+                </span>
               </div>
 
-              {/* Show subscription end date if applicable */}
-              {userData.subscription.currentPeriodEnd && (
-                <p className="text-xs text-gray-500 mt-2">
-                  Access until:{" "}
-                  {new Date(
-                    userData.subscription.currentPeriodEnd
-                  ).toLocaleDateString()}
-                </p>
-              )}
+              <div className="space-y-2">
+                {(userSubscriptions || []).map((sub: any) => {
+                  const packageLabel =
+                    sub.packageName ||
+                    sub.productName ||
+                    sub.planType ||
+                    "Active Plan";
+                  const gptLabels = (sub.gptIds || []).map((gptId: string) =>
+                    getGptLabel(gptId)
+                  );
+
+                  return (
+                    <div
+                      key={sub._id}
+                      className="rounded border border-gray-200 bg-white px-2 py-2"
+                    >
+                      <p className="text-xs font-medium text-gray-700">
+                        {packageLabel}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        GPTs:{" "}
+                        {gptLabels.length > 0 ? gptLabels.join(", ") : "None"}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <p className="text-xs text-gray-500">
+                {dynamicLinks.length} GPTs available in total
+              </p>
             </div>
-          )}
+          </div>
+        )}
 
         {/* No plan information */}
-        {!userData?.subscription && !isAdmin && (
+        {!hasActiveSubscriptions && !isAdmin && (
           <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
             <div className="flex items-center gap-2 mb-1">
               <AlertCircle className="w-4 h-4 text-gray-400" />

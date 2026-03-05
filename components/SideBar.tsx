@@ -71,7 +71,10 @@ export default function Sidebar() {
   // Get all GPTs for admin, otherwise get subscription GPTs
   const subscriptionGpts = useQuery(api.gptAccess.getUserAccessibleGpts) ?? [];
   const allGpts = useQuery(api.gpts.listGpts) ?? [];
-  const gpts = isAdmin ? allGpts : subscriptionGpts;
+  const gptsRaw = isAdmin ? allGpts : subscriptionGpts;
+  const gpts = gptsRaw.filter(
+    (item: any): item is NonNullable<(typeof gptsRaw)[number]> => item !== null
+  );
 
   // Mutations
   const createProject = useMutation(api.project.createProject);
@@ -251,7 +254,9 @@ export default function Sidebar() {
       try {
         setError(null);
 
-        const selectedGptName = gpts.find((item) => item.gptId === gptId)?.name;
+        const selectedGptName = gpts.find(
+          (item: any) => item?.gptId === gptId
+        )?.name;
         const chatId = await createChat({
           title: `New ${selectedGptName?.trim() || gptId} chat`,
           gptId,

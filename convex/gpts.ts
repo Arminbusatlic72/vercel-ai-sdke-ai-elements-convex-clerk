@@ -172,6 +172,18 @@ export const listGpts = query({
   }
 });
 
+export const getGptsByPackageId = query({
+  args: {
+    packageId: v.id("packages")
+  },
+  handler: async (ctx, { packageId }) => {
+    return await ctx.db
+      .query("gpts")
+      .withIndex("by_packageId", (q) => q.eq("packageId", packageId))
+      .collect();
+  }
+});
+
 /**
  * Delete GPT by gptId
  */

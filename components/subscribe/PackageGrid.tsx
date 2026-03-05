@@ -5,12 +5,16 @@ import PackageCard from "./PackageCard";
 interface PackageGridProps {
   packages: Package[];
   selectedPackageId: string;
+  isAtLimit?: boolean;
+  subscribedProductIds?: string[];
   onSelectPackage: (id: string) => void;
 }
 
 export default function PackageGrid({
   packages,
   selectedPackageId,
+  isAtLimit = false,
+  subscribedProductIds = [],
   onSelectPackage
 }: PackageGridProps) {
   return (
@@ -20,6 +24,10 @@ export default function PackageGrid({
           key={pkg._id}
           package={pkg}
           isSelected={pkg._id === selectedPackageId}
+          isAtLimit={isAtLimit}
+          isAlreadySubscribed={subscribedProductIds.includes(
+            pkg.stripeProductId
+          )}
           onSelect={() => onSelectPackage(pkg._id)}
         />
       ))}

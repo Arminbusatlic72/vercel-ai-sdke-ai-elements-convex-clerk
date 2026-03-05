@@ -6,13 +6,17 @@ interface FreePackageSectionProps {
   onActivate: () => Promise<void>;
   loading: boolean;
   error: string;
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
 export default function FreePackageSection({
   currentPackage,
   onActivate,
   loading,
-  error
+  error,
+  disabled = false,
+  disabledReason
 }: FreePackageSectionProps) {
   // Format duration for display
   const formatDuration = () => {
@@ -126,7 +130,8 @@ export default function FreePackageSection({
       {/* Activate Button */}
       <button
         onClick={onActivate}
-        disabled={loading}
+        disabled={loading || disabled}
+        title={disabledReason}
         className="w-full py-4 px-6 bg-green-600 hover:bg-green-700 text-white font-semibold text-lg rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
       >
         {loading ? (
@@ -154,9 +159,10 @@ export default function FreePackageSection({
             Activating...
           </>
         ) : currentPackage.tier === "trial" ? (
+          disabledReason ||
           `Start ${currentPackage.durationDays || 30}-Day Free Trial`
         ) : (
-          "Activate Free Package"
+          disabledReason || "Activate Free Package"
         )}
       </button>
 

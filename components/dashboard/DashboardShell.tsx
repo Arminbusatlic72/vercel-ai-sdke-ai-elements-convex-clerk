@@ -14,7 +14,6 @@ import WelcomeHeader from "./WelcomeHeader";
 import SubscriptionWarnings from "./SubscriptionWarnings";
 import GPTGrid from "./GPTGrid";
 import QuickActions from "./QuickActions";
-import UsageSummary from "./UsageSummary";
 import ManageSubscription from "./ManageSubscription";
 import { SubscriptionData } from "@/lib/types";
 
@@ -23,7 +22,7 @@ interface DashboardShellProps {
 }
 
 export default function DashboardShell({ data }: DashboardShellProps) {
-  const { isLoaded: isUserLoaded } = useUser();
+  const { isLoaded: isUserLoaded, user } = useUser();
   const { isSynced } = useSyncUser();
   const searchParams = useSearchParams();
   const justSubscribed = searchParams.get("success") === "true";
@@ -32,6 +31,10 @@ export default function DashboardShell({ data }: DashboardShellProps) {
   const maxRetries = 10;
 
   const subscriptionData = useQuery(api.users.getUserSubscription);
+  const allSubscriptions = useQuery(
+    api.subscriptions.getUserSubscriptions,
+    user?.id ? { clerkUserId: user.id } : "skip"
+  );
 
   useAccessControl({
     subscriptionData,
@@ -80,10 +83,12 @@ export default function DashboardShell({ data }: DashboardShellProps) {
       <div className="max-w-7xl mx-auto space-y-8">
         <WelcomeHeader data={subscriptionData} />
         <SubscriptionWarnings data={subscriptionData} />
-        <ManageSubscription data={subscriptionData} />
+        <ManageSubscription
+          data={subscriptionData}
+          subscriptions={allSubscriptions}
+        />
         <GPTGrid />
-        <QuickActions />
-        <UsageSummary data={subscriptionData} />
+        <QuickActions subscriptions={allSubscriptions} />
       </div>
     </div>
   );

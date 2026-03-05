@@ -20,6 +20,24 @@ export async function POST(request: Request) {
     const { stripePaymentMethodId, priceId, email, packageKey, maxGpts, tier } =
       await request.json();
 
+    const activeSubscriptions = await convex.query(
+      api.subscriptions.getUserSubscriptions,
+      {
+        clerkUserId: userId
+      }
+    );
+
+    if ((activeSubscriptions?.length ?? 0) >= 6) {
+      return NextResponse.json(
+        {
+          error: "MAX_SUBSCRIPTIONS_REACHED",
+          current: activeSubscriptions.length,
+          max: 6
+        },
+        { status: 400 }
+      );
+    }
+
     // ✅ VALIDATE PRICE ID
     if (!priceId) {
       return NextResponse.json({ error: "Missing priceId" }, { status: 400 });

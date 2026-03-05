@@ -11,6 +11,7 @@ export default defineSchema({
 
     // ✅ ADD THESE SUBSCRIPTION FIELDS:
     stripeCustomerId: v.optional(v.string()),
+    subscriptionIds: v.optional(v.array(v.id("subscriptions"))),
 
     subscription: v.optional(
       v.object({
@@ -79,12 +80,20 @@ export default defineSchema({
     currentPeriodStart: v.number(),
     currentPeriodEnd: v.number(),
     cancelAtPeriodEnd: v.optional(v.boolean()),
+    gptIds: v.array(v.string()),
+    maxGpts: v.optional(v.number()),
+    productName: v.optional(v.string()),
+    trialEndDate: v.optional(v.number()),
+    paymentFailureGracePeriodEnd: v.optional(v.number()),
+    lastPaymentFailedAt: v.optional(v.number()),
     created: v.number(),
     canceledAt: v.optional(v.number())
   })
     .index("by_user_id", ["userId"])
     .index("by_clerk_user_id", ["clerkUserId"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_stripe_subscription_id", ["stripeSubscriptionId"])
+    .index("by_user_status", ["userId", "status"]),
 
   projects: defineTable({
     name: v.string(),

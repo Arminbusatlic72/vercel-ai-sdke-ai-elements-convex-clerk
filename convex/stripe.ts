@@ -1,7 +1,7 @@
 // // convex/stripe.ts - FIXED VERSION
 import { v } from "convex/values";
 import { action, query, mutation, internalMutation } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { api } from "./_generated/api";
 import Stripe from "stripe";
 
 type SubscriptionStatus =
@@ -11,7 +11,8 @@ type SubscriptionStatus =
   | "trialing"
   | "incomplete"
   | "incomplete_expired"
-  | "unpaid";
+  | "unpaid"
+  | "paused";
 
 // Update PlanType to match your packages
 type PlanType = "sandbox" | "clientProject";
@@ -489,15 +490,15 @@ export const handleStripeWebhook = action({
  */
 async function handleSubscriptionUpdate(
   ctx: any,
-  subscription: Stripe.Subscription
+  stripeSub: Stripe.Subscription
 ) {
   const stripe = getStripe(); // ✅ Initialize Stripe here
 
   try {
-    const customerId = subscription.customer as string;
+    const customerId = stripeSub.customer as string;
 
     // Try to get clerkUserId from metadata (highest priority)
-    let clerkUserId = subscription.metadata?.clerkUserId;
+    let clerkUserId = stripeSub.metadata?.clerkUserId;
 
     // Fallback: Look up user by Stripe customer ID
     if (!clerkUserId) {
@@ -514,7 +515,7 @@ async function handleSubscriptionUpdate(
       return;
     }
 
-    const price = subscription.items.data[0]?.price;
+    const price = stripeSub.items.data[0]?.price;
     const priceId = price?.id;
 
     if (!priceId) {
@@ -540,36 +541,56 @@ async function handleSubscriptionUpdate(
       console.warn(`Could not fetch product name:`, error);
     }
 
-    const subscriptionData = {
-      status: subscription.status as SubscriptionStatus,
-      stripeSubscriptionId: subscription.id,
-      plan: packageDetails.plan,
-      priceId: priceId,
-      productName: productName || undefined,
-      currentPeriodEnd: (subscription as any).current_period_end
-        ? (subscription as any).current_period_end * 1000
-        : Date.now(),
-      maxGpts: packageDetails.maxGpts,
-      gptIds: packageDetails.gptIds,
-      cancelAtPeriodEnd: (subscription as any).cancel_at_period_end || false
-    };
-
-    console.log(`📝 Subscription data to save:`, subscriptionData);
-
-    // Update user subscription in database
     const user = await ctx.runQuery(api.users.getUserByClerkId, {
       clerkId: clerkUserId
     });
 
     if (user) {
-      console.log(`✅ Found user, updating subscription...`);
-      await ctx.runMutation(api.users.updateSubscription, {
-        clerkId: clerkUserId,
-        userId: user._id,
-        stripeCustomerId: customerId,
-        subscription: subscriptionData,
-        aiCredits: packageDetails.aiCredits
+      const packageDoc = await ctx.runQuery(api.packages.getPackageByPriceId, {
+        stripePriceId: priceId
       });
+
+      const allGpts = await ctx.runQuery(api.gpts.listGpts, {});
+      const gptIds = packageDoc
+        ? allGpts
+            .filter((gpt: any) => gpt.packageId === packageDoc._id)
+            .map((gpt: any) => gpt.gptId)
+        : packageDetails.gptIds;
+
+      console.log(
+        `✅ Found user, syncing subscription via upsertSubscription...`
+      );
+
+      await ctx.runMutation(api.subscriptions.upsertSubscription, {
+        userId: user._id,
+        clerkUserId,
+        stripeData: {
+          stripeSubscriptionId: stripeSub.id,
+          stripeCustomerId: customerId,
+          status: stripeSub.status as SubscriptionStatus,
+          productId: price.product as string,
+          priceId,
+          currentPeriodStart: (stripeSub as any).current_period_start
+            ? (stripeSub as any).current_period_start * 1000
+            : Date.now(),
+          currentPeriodEnd: (stripeSub as any).current_period_end
+            ? (stripeSub as any).current_period_end * 1000
+            : Date.now(),
+          cancelAtPeriodEnd: (stripeSub as any).cancel_at_period_end || false,
+          trialEndDate: (stripeSub as any).trial_end
+            ? (stripeSub as any).trial_end * 1000
+            : undefined
+        },
+        packageData: {
+          packageId: packageDoc?._id,
+          packageName: packageDoc?.name,
+          planType: packageDoc?.key || packageDetails.plan,
+          maxGpts: packageDoc?.maxGpts ?? packageDetails.maxGpts,
+          gptIds,
+          productName: productName || packageDoc?.name || undefined
+        }
+      });
+
       console.log(`✅ Subscription updated successfully`);
     } else {
       console.error(`❌ User not found with clerkId: ${clerkUserId}`);
@@ -586,37 +607,12 @@ async function handleSubscriptionUpdate(
  */
 async function handleSubscriptionDeleted(
   ctx: any,
-  subscription: Stripe.Subscription
+  stripeSub: Stripe.Subscription
 ) {
-  const customerId = subscription.customer as string;
-
-  const user = await ctx.runQuery(api.users.getByStripeCustomerId, {
-    stripeCustomerId: customerId
-  });
-
-  if (!user) {
-    console.error(`User with Stripe customer ID ${customerId} not found`);
-    return;
-  }
-
-  const canceledSubscriptionData = {
-    status: "canceled" as SubscriptionStatus,
-    stripeSubscriptionId: subscription.id,
-    plan: user.subscription?.plan || "clientProject",
-    priceId: user.subscription?.priceId || "",
-    currentPeriodEnd: (subscription as any).current_period_end
-      ? (subscription as any).current_period_end * 1000
-      : Date.now(),
-    maxGpts: user.subscription?.maxGpts || 0,
-    gptIds: user.subscription?.gptIds || [],
-    cancelAtPeriodEnd: true
-  };
-
-  await ctx.runMutation(internal.users.updateSubscriptionInternal, {
-    clerkId: user.clerkId,
-    stripeCustomerId: customerId,
-    subscription: canceledSubscriptionData,
-    aiCredits: 0 // Reset credits on cancellation
+  await ctx.runMutation(api.subscriptions.cancelSubscription, {
+    stripeSubscriptionId: stripeSub.id,
+    status: "canceled",
+    canceledAt: Date.now()
   });
 }
 
@@ -624,28 +620,28 @@ async function handleSubscriptionDeleted(
  * Handle successful payment
  */
 async function handlePaymentSucceeded(ctx: any, invoice: Stripe.Invoice) {
-  // const subscriptionId = invoice.subscription as string;
   const subscriptionId = invoice.lines.data[0]?.subscription as string | null;
 
-  // Update subscription to active if it was incomplete
-  await ctx.runMutation(internal.users.updateSubscriptionByStripeId, {
-    stripeSubscriptionId: subscriptionId,
-    status: "active"
-  });
+  if (!subscriptionId) return;
+
+  const stripe = getStripe();
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
+  await handleSubscriptionUpdate(ctx, subscription);
 }
 
 /**
  * Handle failed payment
  */
 async function handlePaymentFailed(ctx: any, invoice: Stripe.Invoice) {
-  // const subscriptionId = invoice.subscription as string;
   const subscriptionId = invoice.lines.data[0]?.subscription as string | null;
 
-  // Update subscription to past_due
-  await ctx.runMutation(internal.users.updateSubscriptionByStripeId, {
-    stripeSubscriptionId: subscriptionId,
-    status: "past_due"
-  });
+  if (!subscriptionId) return;
+
+  const stripe = getStripe();
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
+  await handleSubscriptionUpdate(ctx, subscription);
 }
 
 /**
@@ -684,13 +680,43 @@ export const getSubscription = query({
 
     if (!user) return null;
 
+    const activeSubscriptions = (
+      await ctx.db
+        .query("subscriptions")
+        .withIndex("by_user_id", (q: any) => q.eq("userId", user._id))
+        .collect()
+    )
+      .filter((sub: any) =>
+        ["active", "trialing", "past_due"].includes(sub.status)
+      )
+      .sort(
+        (a: any, b: any) =>
+          (b.created ?? b._creationTime) - (a.created ?? a._creationTime)
+      );
+
+    const primary = activeSubscriptions[0] ?? null;
+
     return {
-      subscription: user.subscription,
+      ["subscription"]: primary
+        ? {
+            status: primary.status,
+            stripeSubscriptionId: primary.stripeSubscriptionId,
+            plan: primary.planType,
+            productId: primary.productId,
+            priceId: primary.priceId,
+            productName: primary.productName,
+            currentPeriodStart: primary.currentPeriodStart,
+            currentPeriodEnd: primary.currentPeriodEnd,
+            cancelAtPeriodEnd: primary.cancelAtPeriodEnd,
+            maxGpts: primary.maxGpts,
+            gptIds: primary.gptIds
+          }
+        : null,
       aiCredits: user.aiCredits || 0,
       aiCreditsResetAt: user.aiCreditsResetAt,
       canCreateProject:
-        user.role === "admin" || user.subscription?.status === "active",
-      plan: user.subscription?.plan || "clientProject",
+        user.role === "admin" || (activeSubscriptions?.length ?? 0) > 0,
+      plan: primary?.planType || "clientProject",
       role: user.role || "user"
     };
   }
@@ -720,25 +746,51 @@ export const cancelSubscription = action({
       throw new Error("Not authenticated");
     }
 
-    const user = await ctx.runQuery(api.users.getUserByClerkId, {
-      clerkId: identity.subject
-    });
+    const activeSubscriptions = await ctx.runQuery(
+      api.subscriptions.getUserSubscriptions,
+      {
+        clerkUserId: identity.subject
+      }
+    );
 
-    if (!user?.subscription?.stripeSubscriptionId) {
+    const primary = activeSubscriptions?.[0];
+    if (!primary?.stripeSubscriptionId) {
       throw new Error("No active subscription found");
     }
 
     // Cancel at period end
     const subscription = await stripe.subscriptions.update(
-      user.subscription.stripeSubscriptionId,
+      primary.stripeSubscriptionId,
       { cancel_at_period_end: true }
     );
 
-    // Update local subscription status
-    await ctx.runMutation(internal.users.updateSubscriptionByStripeId, {
-      stripeSubscriptionId: subscription.id,
-      cancelAtPeriodEnd: (subscription as any).cancel_at_period_end || false,
-      status: subscription.status as SubscriptionStatus
+    await ctx.runMutation(api.subscriptions.upsertSubscription, {
+      userId: primary.userId as any,
+      clerkUserId: identity.subject,
+      stripeData: {
+        stripeSubscriptionId: subscription.id,
+        stripeCustomerId: primary.stripeCustomerId,
+        status: subscription.status as SubscriptionStatus,
+        productId: primary.productId,
+        priceId: primary.priceId,
+        currentPeriodStart: (subscription as any).current_period_start
+          ? (subscription as any).current_period_start * 1000
+          : primary.currentPeriodStart,
+        currentPeriodEnd: (subscription as any).current_period_end
+          ? (subscription as any).current_period_end * 1000
+          : primary.currentPeriodEnd,
+        cancelAtPeriodEnd: (subscription as any).cancel_at_period_end || false
+      },
+      packageData: {
+        planType: primary.planType,
+        maxGpts: primary.maxGpts,
+        gptIds: primary.gptIds,
+        productName: primary.productName
+      }
+    });
+
+    await ctx.runMutation(api.subscriptions.cancelSubscriptionAtPeriodEnd, {
+      stripeSubscriptionId: subscription.id
     });
 
     return { success: true, canceledAtPeriodEnd: true };
@@ -758,25 +810,51 @@ export const reactivateSubscription = action({
       throw new Error("Not authenticated");
     }
 
-    const user = await ctx.runQuery(api.users.getUserByClerkId, {
-      clerkId: identity.subject
-    });
+    const activeSubscriptions = await ctx.runQuery(
+      api.subscriptions.getUserSubscriptions,
+      {
+        clerkUserId: identity.subject
+      }
+    );
 
-    if (!user?.subscription?.stripeSubscriptionId) {
+    const primary = activeSubscriptions?.[0];
+    if (!primary?.stripeSubscriptionId) {
       throw new Error("No subscription found");
     }
 
     // Remove cancel at period end
     const subscription = await stripe.subscriptions.update(
-      user.subscription.stripeSubscriptionId,
+      primary.stripeSubscriptionId,
       { cancel_at_period_end: false }
     );
 
-    // Update local subscription status
-    await ctx.runMutation(internal.users.updateSubscriptionByStripeId, {
-      stripeSubscriptionId: subscription.id,
-      cancelAtPeriodEnd: (subscription as any).cancel_at_period_end || false,
-      status: subscription.status as SubscriptionStatus
+    await ctx.runMutation(api.subscriptions.upsertSubscription, {
+      userId: primary.userId as any,
+      clerkUserId: identity.subject,
+      stripeData: {
+        stripeSubscriptionId: subscription.id,
+        stripeCustomerId: primary.stripeCustomerId,
+        status: subscription.status as SubscriptionStatus,
+        productId: primary.productId,
+        priceId: primary.priceId,
+        currentPeriodStart: (subscription as any).current_period_start
+          ? (subscription as any).current_period_start * 1000
+          : primary.currentPeriodStart,
+        currentPeriodEnd: (subscription as any).current_period_end
+          ? (subscription as any).current_period_end * 1000
+          : primary.currentPeriodEnd,
+        cancelAtPeriodEnd: (subscription as any).cancel_at_period_end || false
+      },
+      packageData: {
+        planType: primary.planType,
+        maxGpts: primary.maxGpts,
+        gptIds: primary.gptIds,
+        productName: primary.productName
+      }
+    });
+
+    await ctx.runMutation(api.subscriptions.reactivateSubscription, {
+      stripeSubscriptionId: subscription.id
     });
 
     return { success: true };

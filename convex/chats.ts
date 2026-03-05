@@ -1,6 +1,5 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { findPackageBySubscription } from "./gptAccess";
 
 import { Id } from "./_generated/dataModel";
 
@@ -36,44 +35,32 @@ export const createChat = mutation({
 
     // 3️⃣ Only require a subscription when a GPT is requested
     if (gptId) {
-      const subscription = user.subscription;
-      if (!subscription) {
+      const activeSubscriptions = (
+        await ctx.db
+          .query("subscriptions")
+          .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+          .collect()
+      ).filter(
+        (sub) =>
+          sub.status === "active" ||
+          sub.status === "trialing" ||
+          sub.status === "past_due"
+      );
+
+      if (activeSubscriptions.length === 0) {
         throw new Error(
           "No subscription found. Please subscribe to access GPTs."
         );
       }
 
-      // Only allow active subscriptions for GPT access
-      // if (subscription.status !== "active") {
-      //   throw new Error(`Subscription is ${subscription.status}, not active`);
-      // }
-      if (
-        subscription.status !== "active" &&
-        subscription.status !== "trialing"
-      ) {
-        throw new Error(
-          `Subscription is ${subscription.status}, not active or trialing`
-        );
+      const mergedGptIds = new Set<string>();
+      for (const sub of activeSubscriptions) {
+        for (const accessibleGptId of sub.gptIds || []) {
+          mergedGptIds.add(accessibleGptId);
+        }
       }
 
-      // 4️⃣ Use helper to find package (tries productId, falls back to priceId)
-      const matchedPackage = await findPackageBySubscription(
-        ctx,
-        subscription.productId,
-        subscription.priceId
-      );
-
-      if (!matchedPackage) {
-        throw new Error("Your subscription package was not found.");
-      }
-
-      const gpt = await ctx.db
-        .query("gpts")
-        .withIndex("by_packageId", (q) => q.eq("packageId", matchedPackage._id))
-        .collect()
-        .then((gpts) => gpts.find((g) => g.gptId === gptId));
-
-      if (!gpt) {
+      if (!mergedGptIds.has(gptId)) {
         throw new Error("You do not have access to this GPT.");
       }
     }

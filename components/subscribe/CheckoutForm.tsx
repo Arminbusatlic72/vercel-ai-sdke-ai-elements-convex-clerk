@@ -11,6 +11,7 @@ import FreePackageSection from "./FreePackageSection";
 import SuccessMessage from "./SuccessMessage";
 import TrustIndicators from "./TrustIndicators";
 import { Package } from "@/lib/types";
+import { SubscriptionLimitBadge } from "@/components/subscriptions/SubscriptionLimitBadge";
 
 export default function CheckoutForm() {
   const stripe = useStripe();
@@ -19,6 +20,36 @@ export default function CheckoutForm() {
   const router = useRouter();
 
   const packages: Package[] = useQuery(api.packages.getAllPackages) || [];
+  const userSubscriptions = useQuery(
+    api.subscriptions.getUserSubscriptions,
+    {}
+  );
+
+  if (userSubscriptions === undefined) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-12">
+        <div className="space-y-6">
+          <div className="h-8 w-64 mx-auto rounded bg-gray-200 animate-pulse" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {[1, 2].map((item) => (
+              <div
+                key={item}
+                className="h-72 rounded-xl bg-gray-200 animate-pulse"
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (userSubscriptions === null) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-12 text-center">
+        <p className="text-sm text-gray-500">Unable to load subscriptions.</p>
+      </div>
+    );
+  }
 
   const activePackages: Package[] = packages
     .filter((pkg) => pkg.stripePriceId && (pkg.priceAmount || 0) > 0)
@@ -47,8 +78,38 @@ export default function CheckoutForm() {
     (pkg) => pkg._id === selectedPackageId
   );
 
+  const activeCount = userSubscriptions?.length ?? 0;
+  const isAtLimit = activeCount >= 6;
+  const subscribedProductIds = new Set<string>(
+    (userSubscriptions ?? [])
+      .map((subscription: any) => subscription.productId)
+      .filter(
+        (productId: any): productId is string => typeof productId === "string"
+      )
+  );
+  const isAlreadySubscribed = selectedPackage
+    ? subscribedProductIds.has(selectedPackage.stripeProductId)
+    : false;
+
+  const getDisabledReason = () => {
+    if (isAtLimit) {
+      return "Maximum 6 active subscriptions reached";
+    }
+    if (isAlreadySubscribed) {
+      return "Already subscribed to this package";
+    }
+    return undefined;
+  };
+
+  const disabledReason = getDisabledReason();
+  const showLimitWarning = activeCount >= 5;
+
   const handlePaidSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (disabledReason) {
+      setError(disabledReason);
+      return;
+    }
     if (!stripe || !elements || !user || !selectedPackage) {
       setError("Payment system not ready. Please try again.");
       return;
@@ -113,6 +174,10 @@ export default function CheckoutForm() {
   };
 
   const handleFreeActivation = async () => {
+    if (disabledReason) {
+      setError(disabledReason);
+      return;
+    }
     if (!user || !selectedPackage) return;
 
     setLoading(true);
@@ -197,10 +262,25 @@ export default function CheckoutForm() {
       <PackageGrid
         packages={activePackages}
         selectedPackageId={selectedPackageId || ""}
+        isAtLimit={isAtLimit}
+        subscribedProductIds={Array.from(subscribedProductIds)}
         onSelectPackage={setSelectedPackageId}
       />
 
       <div className="bg-white border border-gray-200 rounded-xl p-8 mt-8">
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <SubscriptionLimitBadge activeCount={activeCount} max={6} />
+          {showLimitWarning && (
+            <p
+              className={`text-sm ${isAtLimit ? "text-red-600" : "text-amber-600"}`}
+            >
+              {isAtLimit
+                ? "You have reached the maximum of 6 active subscriptions."
+                : "You have 1 slot remaining before reaching the limit."}
+            </p>
+          )}
+        </div>
+
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-gray-900 mb-2">
             {selectedPackage.name} Details
@@ -219,6 +299,8 @@ export default function CheckoutForm() {
             loading={loading}
             error={error}
             stripeEnabled={!!stripe}
+            disabled={!!disabledReason}
+            disabledReason={disabledReason}
           />
         ) : (
           <FreePackageSection
@@ -226,6 +308,8 @@ export default function CheckoutForm() {
             onActivate={handleFreeActivation}
             loading={loading}
             error={error}
+            disabled={!!disabledReason}
+            disabledReason={disabledReason}
           />
         )}
 

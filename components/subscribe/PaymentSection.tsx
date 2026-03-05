@@ -148,6 +148,8 @@ interface PaymentSectionProps {
   loading: boolean;
   error: string;
   stripeEnabled: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
 export default function PaymentSection({
@@ -155,7 +157,9 @@ export default function PaymentSection({
   onSubmit,
   loading,
   error,
-  stripeEnabled
+  stripeEnabled,
+  disabled = false,
+  disabledReason
 }: PaymentSectionProps) {
   // Format price for display
   const formatPrice = () => {
@@ -269,7 +273,8 @@ export default function PaymentSection({
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={loading || !stripeEnabled}
+          disabled={loading || !stripeEnabled || disabled}
+          title={disabledReason}
           className="w-full py-4 px-6 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-lg rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
         >
           {loading ? (
@@ -297,7 +302,7 @@ export default function PaymentSection({
               Processing...
             </>
           ) : (
-            `Subscribe Now for ${formatPrice()}`
+            disabledReason || `Subscribe Now for ${formatPrice()}`
           )}
         </button>
 

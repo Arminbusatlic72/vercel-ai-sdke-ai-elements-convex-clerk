@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { api } from "./_generated/api";
 
 /**
  * Record a webhook event for idempotency tracking
@@ -127,7 +128,7 @@ export const getPendingSubscriptionByEmail = query({
 });
 
 /**
- * Claim pending subscription: when user signs up with email,
+ * Claim pending subscription when user signs up with email,
  * attach any pending subscription from Squarespace purchase
  */
 export const claimPendingSubscriptionByEmail = mutation({
@@ -157,27 +158,53 @@ export const claimPendingSubscriptionByEmail = mutation({
       return { success: false, error: "User not found" };
     }
 
-    // Map product to plan type
     const planType = mapProductToPlanType(pending.productId || "");
     const maxGpts = mapPlanToMaxGpts(planType);
 
-    // Attach subscription to user
+    const pkg = pending.productId
+      ? await ctx.db
+          .query("packages")
+          .withIndex("by_stripeProductId", (q: any) =>
+            q.eq("stripeProductId", pending.productId)
+          )
+          .first()
+      : null;
+
+    const gpts = pkg
+      ? await ctx.db
+          .query("gpts")
+          .withIndex("by_packageId", (q: any) => q.eq("packageId", pkg._id))
+          .collect()
+      : [];
+
     await ctx.db.patch(user._id, {
       stripeCustomerId: pending.stripeCustomerId || user.stripeCustomerId,
-      subscription: {
-        status: (pending.status || "active") as any,
+      updatedAt: Date.now()
+    });
+
+    await ctx.runMutation(api.subscriptions.upsertSubscription, {
+      userId: user._id,
+      clerkUserId: args.clerkUserId,
+      stripeData: {
         stripeSubscriptionId: pending.stripeSubscriptionId,
-        plan: planType,
-        productId: pending.productId || "",
-        priceId: pending.priceId, // Keep for reference
+        stripeCustomerId:
+          pending.stripeCustomerId || user.stripeCustomerId || "",
+        status: (pending.status || "active") as any,
+        productId: pending.productId,
+        priceId: pending.priceId,
         currentPeriodStart: Date.now(),
         currentPeriodEnd:
           pending.currentPeriodEnd || Date.now() + 30 * 24 * 60 * 60 * 1000,
-        cancelAtPeriodEnd: false,
-        maxGpts,
-        gptIds: []
+        cancelAtPeriodEnd: false
       },
-      updatedAt: Date.now()
+      packageData: {
+        packageId: pkg?._id,
+        packageName: pkg?.name,
+        planType,
+        maxGpts,
+        gptIds: gpts.map((gpt: any) => gpt.gptId),
+        productName: pkg?.name
+      }
     });
 
     // Delete pending subscription record

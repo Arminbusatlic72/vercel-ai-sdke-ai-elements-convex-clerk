@@ -4,6 +4,30 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { Doc } from "./_generated/dataModel";
 
+const ACTIVE_STATUSES = new Set(["active", "trialing", "past_due"]);
+
+async function getActiveSubscriptionsForUser(ctx: any, userId: any) {
+  const rows = await ctx.db
+    .query("subscriptions")
+    .withIndex("by_user_id", (q: any) => q.eq("userId", userId))
+    .collect();
+
+  return rows.filter((row: any) => ACTIVE_STATUSES.has(row.status));
+}
+
+async function getMergedGptIdsForUser(ctx: any, user: any): Promise<string[]> {
+  const activeSubs = await getActiveSubscriptionsForUser(ctx, user._id);
+  const merged = new Set<string>();
+
+  for (const sub of activeSubs) {
+    for (const gptId of sub.gptIds || []) {
+      merged.add(gptId);
+    }
+  }
+
+  return Array.from(merged);
+}
+
 /**
  * HELPER: Find package by subscription (tries productId first, then priceId)
  * Used by createChat and other mutations for consistency
@@ -60,8 +84,8 @@ export const getAvailableGptsForUser = query({
       };
     }
 
-    // 2. Check if user has active subscription
-    if (!user.subscription) {
+    const activeSubs = await getActiveSubscriptionsForUser(ctx, user._id);
+    if (activeSubs.length === 0) {
       return {
         gpts: [],
         subscription: null,
@@ -70,82 +94,32 @@ export const getAvailableGptsForUser = query({
       };
     }
 
-    const subscription = user.subscription;
-
-    // 3. Validate subscription status and period
-    const isStatusActive =
-      subscription.status === "active" || subscription.status === "trialing";
-
-    const isWithinPeriod =
-      !subscription.currentPeriodEnd ||
-      subscription.currentPeriodEnd * 1000 > Date.now();
-
-    if (!isStatusActive || !isWithinPeriod) {
-      return {
-        gpts: [],
-        subscription: {
-          status: subscription.status,
-          plan: subscription.plan,
-          maxGpts: subscription.maxGpts,
-          currentPeriodEnd: subscription.currentPeriodEnd
-        },
-        hasAccess: false,
-        reason: `Subscription ${subscription.status}${!isWithinPeriod ? " and expired" : ""}`
-      };
-    }
-
-    // 4. Get package details to find which GPTs are included
-    let packageData;
-    if (subscription.productId) {
-      packageData = await ctx.db
-        .query("packages")
-        .withIndex("by_stripeProductId", (q) =>
-          q.eq("stripeProductId", subscription.productId as string)
+    const mergedGptIds = await getMergedGptIdsForUser(ctx, user);
+    const availableGpts = (
+      await Promise.all(
+        mergedGptIds.map((gptId) =>
+          ctx.db
+            .query("gpts")
+            .withIndex("by_gptId", (q: any) => q.eq("gptId", gptId))
+            .first()
         )
-        .unique();
-    } else if (subscription.priceId) {
-      packageData = await ctx.db
-        .query("packages")
-        .withIndex("by_stripePriceId", (q) =>
-          q.eq("stripePriceId", subscription.priceId as string)
-        )
-        .unique();
-    } else {
-      packageData = null;
-    }
+      )
+    ).filter(Boolean);
 
-    if (!packageData) {
-      return {
-        gpts: [],
-        subscription: {
-          status: subscription.status,
-          plan: subscription.plan,
-          maxGpts: subscription.maxGpts,
-          currentPeriodEnd: subscription.currentPeriodEnd
-        },
-        hasAccess: false,
-        reason: "Package not found"
-      };
-    }
-
-    // 5. Get GPTs associated with this package
-    const gpts = await ctx.db
-      .query("gpts")
-      .withIndex("by_packageId", (q) => q.eq("packageId", packageData._id))
-      .collect();
-
-    // 6. Check if user is within their GPT limit
-    const availableGpts = gpts.slice(0, subscription.maxGpts);
+    const topSub = activeSubs.sort(
+      (a: any, b: any) =>
+        (b.created ?? b._creationTime) - (a.created ?? a._creationTime)
+    )[0];
 
     return {
       gpts: availableGpts,
       subscription: {
-        status: subscription.status,
-        plan: subscription.plan,
-        maxGpts: subscription.maxGpts,
+        status: topSub.status,
+        plan: topSub.planType,
+        maxGpts: topSub.maxGpts,
         currentGptsCount: availableGpts.length,
-        currentPeriodEnd: subscription.currentPeriodEnd,
-        packageName: packageData.name
+        currentPeriodEnd: topSub.currentPeriodEnd,
+        packageName: topSub.productName
       },
       hasAccess: true,
       reason: null
@@ -190,61 +164,18 @@ export const checkGptAccess = query({
       };
     }
 
-    if (!user?.subscription) {
+    if (!user) {
       return {
         hasAccess: false,
         reason: "No active subscription"
       };
     }
 
-    // 2. Check subscription validity
-    const isStatusActive =
-      user.subscription.status === "active" ||
-      user.subscription.status === "trialing";
-
-    const isWithinPeriod =
-      !user.subscription.currentPeriodEnd ||
-      user.subscription.currentPeriodEnd * 1000 > Date.now();
-
-    if (!isStatusActive || !isWithinPeriod) {
+    const mergedGptIds = await getMergedGptIdsForUser(ctx, user);
+    if (!mergedGptIds.includes(args.gptId)) {
       return {
         hasAccess: false,
-        reason: "Subscription expired or inactive"
-      };
-    }
-
-    // 4. Get package and verify GPT belongs to user's package
-    let packageData;
-    if (user.subscription!.productId) {
-      packageData = await ctx.db
-        .query("packages")
-        .withIndex("by_stripeProductId", (q) =>
-          q.eq("stripeProductId", user.subscription!.productId as string)
-        )
-        .unique();
-    } else if (user.subscription!.priceId) {
-      packageData = await ctx.db
-        .query("packages")
-        .withIndex("by_stripePriceId", (q) =>
-          q.eq("stripePriceId", user.subscription!.priceId as string)
-        )
-        .unique();
-    } else {
-      packageData = null;
-    }
-
-    if (!packageData) {
-      return {
-        hasAccess: false,
-        reason: "Package not found"
-      };
-    }
-
-    // Check if GPT belongs to this package
-    if (gpt.packageId?.toString() !== packageData._id.toString()) {
-      return {
-        hasAccess: false,
-        reason: "GPT not included in your subscription package"
+        reason: "GPT not included in your active subscriptions"
       };
     }
 
@@ -269,47 +200,30 @@ export const getSubscriptionSummary = query({
       .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkUserId))
       .unique();
 
-    if (!user?.subscription) {
+    if (!user) {
       return null;
     }
 
-    let packageData;
-    if (user.subscription!.productId) {
-      packageData = await ctx.db
-        .query("packages")
-        .withIndex("by_stripeProductId", (q) =>
-          q.eq("stripeProductId", user.subscription!.productId as string)
-        )
-        .unique();
-    } else if (user.subscription!.priceId) {
-      packageData = await ctx.db
-        .query("packages")
-        .withIndex("by_stripePriceId", (q) =>
-          q.eq("stripePriceId", user.subscription!.priceId as string)
-        )
-        .unique();
-    } else {
-      packageData = null;
-    }
+    const activeSubs = await getActiveSubscriptionsForUser(ctx, user._id);
+    if (activeSubs.length === 0) return null;
 
-    const isActive =
-      (user.subscription.status === "active" ||
-        user.subscription.status === "trialing") &&
-      (!user.subscription.currentPeriodEnd ||
-        user.subscription.currentPeriodEnd * 1000 > Date.now());
+    const primary = activeSubs.sort(
+      (a: any, b: any) =>
+        (b.created ?? b._creationTime) - (a.created ?? a._creationTime)
+    )[0];
 
     return {
-      status: user.subscription.status,
-      plan: user.subscription.plan,
-      packageName: packageData?.name || "Unknown",
-      maxGpts: user.subscription.maxGpts,
-      currentPeriodEnd: user.subscription.currentPeriodEnd,
-      cancelAtPeriodEnd: user.subscription.cancelAtPeriodEnd,
-      isActive,
-      daysRemaining: user.subscription.currentPeriodEnd
+      status: primary.status,
+      plan: primary.planType,
+      packageName: primary.productName || "Unknown",
+      maxGpts: primary.maxGpts,
+      currentPeriodEnd: primary.currentPeriodEnd,
+      cancelAtPeriodEnd: primary.cancelAtPeriodEnd,
+      isActive: true,
+      activeSubscriptionCount: activeSubs.length,
+      daysRemaining: primary.currentPeriodEnd
         ? Math.ceil(
-            (user.subscription.currentPeriodEnd * 1000 - Date.now()) /
-              (1000 * 60 * 60 * 24)
+            (primary.currentPeriodEnd - Date.now()) / (1000 * 60 * 60 * 24)
           )
         : null
     };
@@ -339,39 +253,20 @@ export const getUserAccessibleGpts = query({
       return await ctx.db.query("gpts").collect();
     }
 
-    const subscription = user.subscription;
-    if (!subscription) return [];
+    const mergedGptIds = await getMergedGptIdsForUser(ctx, user);
+    if (mergedGptIds.length === 0) return [];
 
-    const isAuthorized =
-      subscription.status === "active" || subscription.status === "trialing";
-
-    if (!isAuthorized) return [];
-
-    // Find package by productId first, then fallback to priceId
-    let pkg = null as any;
-    if (subscription.productId) {
-      pkg = await ctx.db
-        .query("packages")
-        .withIndex("by_stripeProductId", (q) =>
-          q.eq("stripeProductId", subscription.productId as string)
+    const gpts = (
+      await Promise.all(
+        mergedGptIds.map((gptId) =>
+          ctx.db
+            .query("gpts")
+            .withIndex("by_gptId", (q: any) => q.eq("gptId", gptId))
+            .first()
         )
-        .unique();
-    }
+      )
+    ).filter(Boolean);
 
-    if (!pkg && subscription.priceId) {
-      pkg = await ctx.db
-        .query("packages")
-        .withIndex("by_stripePriceId", (q) =>
-          q.eq("stripePriceId", subscription.priceId as string)
-        )
-        .unique();
-    }
-
-    if (!pkg) return [];
-
-    return await ctx.db
-      .query("gpts")
-      .withIndex("by_packageId", (q) => q.eq("packageId", pkg._id))
-      .collect();
+    return gpts;
   }
 });

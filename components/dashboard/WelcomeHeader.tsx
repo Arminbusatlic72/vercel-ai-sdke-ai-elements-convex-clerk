@@ -7,23 +7,27 @@ import SubscriptionStatusBadge from "./SubscriptionStatusBadge";
 
 export default function WelcomeHeader({ data }: { data: any }) {
   const { user } = useUser();
-  const productId = data?.subscription?.productId?.trim();
-  const queryArgs = productId
-    ? {
-        stripeProductId: productId
-      }
-    : "skip";
+  const activeSubscriptions = useQuery(
+    api.subscriptions.getUserSubscriptions,
+    {}
+  );
 
-  const pkg = useQuery(api.packages.getPackageByProductId, queryArgs);
-  const planName = pkg?.name || data?.planLabel || "No active plan";
-
-  if (process.env.NODE_ENV === "development") {
-    console.log("WelcomeHeader plan debug", {
-      productId: data?.subscription?.productId,
-      queryArgs,
-      pkg
-    });
-  }
+  const packageNames =
+    activeSubscriptions === undefined
+      ? data?.planLabel && data.planLabel !== "No active plan"
+        ? [data.planLabel]
+        : []
+      : Array.from(
+          new Set(
+            activeSubscriptions.map(
+              (sub: any) =>
+                sub.packageName ||
+                sub.productName ||
+                sub.planType ||
+                "Active Plan"
+            )
+          )
+        );
 
   return (
     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -36,22 +40,34 @@ export default function WelcomeHeader({ data }: { data: any }) {
           Role: {data.role.toUpperCase()}
         </p>
 
-        {/* Plan label comes from root */}
-        <p className="text-sm text-muted-foreground">Plan: {planName}</p>
+        {packageNames.length > 0 ? (
+          <div>
+            <p className="text-sm text-muted-foreground">Packages:</p>
+            <ul className="list-disc pl-5 text-sm text-muted-foreground">
+              {packageNames.map((name) => (
+                <li key={name}>{name}</li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Packages: No active plan
+          </p>
+        )}
       </div>
 
-      {data.subscription && (
-        <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3">
+        {data.subscription && (
           <SubscriptionStatusBadge
             status={data.subscription.status}
             plan={data.subscription.plan}
           />
+        )}
 
-          <div className="text-sm text-gray-600">
-            <span className="font-semibold">{data.aiCredits}</span> AI Credits
-          </div>
+        <div className="text-sm text-gray-600">
+          <span className="font-semibold">{data.aiCredits}</span> AI Credits
         </div>
-      )}
+      </div>
     </div>
   );
 }

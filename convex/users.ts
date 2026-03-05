@@ -1,6 +1,7 @@
 // convex/users.ts
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
+import { api } from "./_generated/api";
 
 export const getCurrentUser = query({
   handler: async (ctx) => {
@@ -58,7 +59,7 @@ export const getUserSubscription = query({
 
     return {
       role: user.role,
-      subscription: subscription || null,
+      ["subscription"]: subscription || null,
       aiCredits: user.aiCredits ?? 0,
       aiCreditsResetAt: user.aiCreditsResetAt,
       canCreateProject: isActive,
@@ -73,16 +74,15 @@ export const getUserSubscription = query({
 export const getByStripeSubscriptionId = query({
   args: { stripeSubscriptionId: v.string() },
   handler: async (ctx, args) => {
-    const users = await ctx.db
-      .query("users")
-      .filter((q) =>
-        q.eq(
-          q.field("subscription.stripeSubscriptionId"),
-          args.stripeSubscriptionId
-        )
+    const sub = await ctx.db
+      .query("subscriptions")
+      .withIndex("by_stripe_subscription_id", (q: any) =>
+        q.eq("stripeSubscriptionId", args.stripeSubscriptionId)
       )
-      .collect();
-    return users.length > 0 ? users[0] : null;
+      .first();
+
+    if (!sub) return null;
+    return await ctx.db.get(sub.userId);
   }
 });
 
@@ -137,7 +137,6 @@ export const syncCurrentUser = mutation({
       clerkId: identity.subject,
       ...userData,
       stripeCustomerId: undefined,
-      subscription: undefined,
       aiCredits: 10, // Starter credits for new users
       aiCreditsResetAt: undefined,
       createdAt: Date.now()
@@ -192,26 +191,39 @@ async function claimPendingSubscription(
       return;
     }
 
-    const planType = pkg.name;
-    const maxGpts = pkg.maxGpts;
+    const gpts = await ctx.db
+      .query("gpts")
+      .withIndex("by_packageId", (q: any) => q.eq("packageId", pkg._id))
+      .collect();
 
-    // Attach subscription to user
     await ctx.db.patch(user._id, {
       stripeCustomerId: pending.stripeCustomerId || user.stripeCustomerId,
-      subscription: {
-        status: (pending.status || "active") as any,
+      updatedAt: Date.now()
+    });
+
+    await ctx.runMutation(api.subscriptions.upsertSubscription, {
+      userId: user._id,
+      clerkUserId,
+      stripeData: {
         stripeSubscriptionId: pending.stripeSubscriptionId,
-        plan: planType,
+        stripeCustomerId:
+          pending.stripeCustomerId || user.stripeCustomerId || "",
+        status: (pending.status || "active") as any,
         productId: pending.productId,
-        priceId: pending.priceId || "",
+        priceId: pending.priceId,
         currentPeriodStart: Date.now(),
         currentPeriodEnd:
           pending.currentPeriodEnd || Date.now() + 30 * 24 * 60 * 60 * 1000,
-        cancelAtPeriodEnd: false,
-        maxGpts,
-        gptIds: []
+        cancelAtPeriodEnd: false
       },
-      updatedAt: Date.now()
+      packageData: {
+        packageId: pkg._id,
+        packageName: pkg.name,
+        planType: pkg.key,
+        maxGpts: pkg.maxGpts,
+        gptIds: gpts.map((gpt: any) => gpt.gptId),
+        productName: pkg.name
+      }
     });
 
     // Delete pending subscription record
@@ -261,12 +273,16 @@ function mapPlanToMaxGpts(plan: string) {
 /**
  * Update user subscription (for use with Stripe webhooks)
  */
+/**
+ * @deprecated Use convex/subscriptions.ts upsertSubscription instead.
+ * This function will be removed after full migration is verified.
+ */
 export const updateSubscription = mutation({
   args: {
     clerkId: v.string(), // Use clerkId for webhook compatibility
     userId: v.optional(v.id("users")), // Optional userId for direct updates
     stripeCustomerId: v.string(),
-    subscription: v.object({
+    subscriptionData: v.object({
       status: v.union(
         v.literal("active"),
         v.literal("canceled"),
@@ -311,7 +327,6 @@ export const updateSubscription = mutation({
 
     const patchData: any = {
       stripeCustomerId: args.stripeCustomerId,
-      subscription: args.subscription,
       updatedAt: Date.now()
     };
 
@@ -321,21 +336,27 @@ export const updateSubscription = mutation({
 
     await ctx.db.patch(user._id, patchData);
 
-    // Create subscription history record
-    await ctx.db.insert("subscriptions", {
-      clerkUserId: args.clerkId,
+    await ctx.runMutation(api.subscriptions.upsertSubscription, {
       userId: user._id,
-      stripeSubscriptionId: args.subscription.stripeSubscriptionId,
-      stripeCustomerId: args.stripeCustomerId,
-      status: args.subscription.status,
-      priceId: args.subscription.priceId,
-      planType: args.subscription.plan,
-      currentPeriodStart: Date.now(),
-      currentPeriodEnd: args.subscription.currentPeriodEnd,
-      cancelAtPeriodEnd: args.subscription.cancelAtPeriodEnd || false,
-      created: Date.now(),
-      canceledAt:
-        args.subscription.status === "canceled" ? Date.now() : undefined
+      clerkUserId: args.clerkId,
+      stripeData: {
+        stripeSubscriptionId: args.subscriptionData.stripeSubscriptionId,
+        stripeCustomerId: args.stripeCustomerId,
+        status: args.subscriptionData.status,
+        productId: args.subscriptionData.productId,
+        priceId: args.subscriptionData.priceId,
+        currentPeriodStart: Date.now(),
+        currentPeriodEnd: args.subscriptionData.currentPeriodEnd,
+        cancelAtPeriodEnd: args.subscriptionData.cancelAtPeriodEnd,
+        canceledAt:
+          args.subscriptionData.status === "canceled" ? Date.now() : undefined
+      },
+      packageData: {
+        planType: args.subscriptionData.plan,
+        maxGpts: args.subscriptionData.maxGpts,
+        gptIds: args.subscriptionData.gptIds,
+        productName: args.subscriptionData.productName
+      }
     });
 
     return { success: true };
@@ -376,11 +397,15 @@ export const saveStripeCustomerId = mutation({
 /**
  * Internal version for Stripe webhook handling
  */
+/**
+ * @deprecated Use convex/subscriptions.ts upsertSubscription instead.
+ * This function will be removed after full migration is verified.
+ */
 export const updateSubscriptionInternal = internalMutation({
   args: {
     clerkId: v.string(),
     stripeCustomerId: v.string(),
-    subscription: v.object({
+    subscriptionData: v.object({
       status: v.union(
         v.literal("active"),
         v.literal("canceled"),
@@ -419,7 +444,6 @@ export const updateSubscriptionInternal = internalMutation({
 
     const patchData: any = {
       stripeCustomerId: args.stripeCustomerId,
-      subscription: args.subscription,
       updatedAt: Date.now()
     };
 
@@ -429,21 +453,26 @@ export const updateSubscriptionInternal = internalMutation({
 
     await ctx.db.patch(user._id, patchData);
 
-    // Create subscription history record
-    await ctx.db.insert("subscriptions", {
-      clerkUserId: args.clerkId,
+    await ctx.runMutation(api.subscriptions.upsertSubscription, {
       userId: user._id,
-      stripeSubscriptionId: args.subscription.stripeSubscriptionId,
-      stripeCustomerId: args.stripeCustomerId,
-      status: args.subscription.status,
-      priceId: args.subscription.priceId,
-      planType: args.subscription.plan,
-      currentPeriodStart: Date.now(),
-      currentPeriodEnd: args.subscription.currentPeriodEnd,
-      cancelAtPeriodEnd: args.subscription.cancelAtPeriodEnd || false,
-      created: Date.now(),
-      canceledAt:
-        args.subscription.status === "canceled" ? Date.now() : undefined
+      clerkUserId: args.clerkId,
+      stripeData: {
+        stripeSubscriptionId: args.subscriptionData.stripeSubscriptionId,
+        stripeCustomerId: args.stripeCustomerId,
+        status: args.subscriptionData.status,
+        productId: args.subscriptionData.productId,
+        priceId: args.subscriptionData.priceId,
+        currentPeriodStart: Date.now(),
+        currentPeriodEnd: args.subscriptionData.currentPeriodEnd,
+        cancelAtPeriodEnd: args.subscriptionData.cancelAtPeriodEnd,
+        canceledAt:
+          args.subscriptionData.status === "canceled" ? Date.now() : undefined
+      },
+      packageData: {
+        planType: args.subscriptionData.plan,
+        maxGpts: args.subscriptionData.maxGpts,
+        gptIds: args.subscriptionData.gptIds
+      }
     });
 
     return { success: true };
@@ -454,6 +483,10 @@ export const updateSubscriptionInternal = internalMutation({
  * Update subscription by Stripe subscription ID (for webhooks)
  */
 // In convex/users.ts - update the updateSubscriptionByStripeId mutation
+/**
+ * @deprecated Use convex/subscriptions.ts upsertSubscription instead.
+ * This function will be removed after full migration is verified.
+ */
 export const updateSubscriptionByStripeId = internalMutation({
   args: {
     stripeSubscriptionId: v.string(),
@@ -478,69 +511,56 @@ export const updateSubscriptionByStripeId = internalMutation({
     )
   },
   handler: async (ctx, args) => {
-    // Find user by stripe subscription ID
-    const users = await ctx.db
-      .query("users")
-      .filter((q) =>
-        q.eq(
-          q.field("subscription.stripeSubscriptionId"),
-          args.stripeSubscriptionId
-        )
+    const existingSub = await ctx.db
+      .query("subscriptions")
+      .withIndex("by_stripe_subscription_id", (q: any) =>
+        q.eq("stripeSubscriptionId", args.stripeSubscriptionId)
       )
-      .collect();
+      .first();
 
-    if (users.length === 0) {
+    if (!existingSub) {
       console.error(
         `User with stripeSubscriptionId ${args.stripeSubscriptionId} not found`
       );
       return { success: false, error: "User not found" };
     }
 
-    const user = users[0];
-
-    if (!user.subscription) {
-      console.error(`User ${user._id} has no subscription to update`);
-      return { success: false, error: "No subscription found" };
-    }
+    const user = await ctx.db.get(existingSub.userId);
+    if (!user) return { success: false, error: "User not found" };
 
     // Ensure currentPeriodEnd is always a number, not undefined
     const currentPeriodEnd =
       args.currentPeriodEnd !== undefined
         ? args.currentPeriodEnd
-        : user.subscription.currentPeriodEnd !== undefined
-          ? user.subscription.currentPeriodEnd
+        : existingSub.currentPeriodEnd !== undefined
+          ? existingSub.currentPeriodEnd
           : Date.now() + 30 * 24 * 60 * 60 * 1000; // Default: 30 days from now
 
-    const updatedSubscription = {
-      ...user.subscription,
-      status: args.status,
-      currentPeriodEnd, // Now guaranteed to be a number
-      cancelAtPeriodEnd:
-        args.cancelAtPeriodEnd !== undefined
-          ? args.cancelAtPeriodEnd
-          : user.subscription.cancelAtPeriodEnd,
-      plan: args.plan || user.subscription.plan
-    };
-
-    await ctx.db.patch(user._id, {
-      subscription: updatedSubscription,
-      updatedAt: Date.now()
-    });
-
-    // Update subscription history - currentPeriodEnd is now guaranteed to be a number
-    await ctx.db.insert("subscriptions", {
-      clerkUserId: user.clerkId,
+    await ctx.runMutation(api.subscriptions.upsertSubscription, {
       userId: user._id,
-      stripeSubscriptionId: args.stripeSubscriptionId,
-      stripeCustomerId: user.stripeCustomerId || "", // Provide default if undefined
-      status: args.status,
-      priceId: user.subscription.priceId!,
-      planType: updatedSubscription.plan,
-      currentPeriodStart: Date.now(),
-      currentPeriodEnd: currentPeriodEnd, // This is now a number
-      cancelAtPeriodEnd: updatedSubscription.cancelAtPeriodEnd || false,
-      created: Date.now(),
-      canceledAt: args.status === "canceled" ? Date.now() : undefined
+      clerkUserId: user.clerkId,
+      stripeData: {
+        stripeSubscriptionId: args.stripeSubscriptionId,
+        stripeCustomerId:
+          existingSub.stripeCustomerId || user.stripeCustomerId || "",
+        status: args.status,
+        productId: existingSub.productId,
+        priceId: existingSub.priceId,
+        currentPeriodStart: existingSub.currentPeriodStart,
+        currentPeriodEnd,
+        cancelAtPeriodEnd:
+          args.cancelAtPeriodEnd !== undefined
+            ? args.cancelAtPeriodEnd
+            : existingSub.cancelAtPeriodEnd,
+        canceledAt:
+          args.status === "canceled" ? Date.now() : existingSub.canceledAt
+      },
+      packageData: {
+        planType: args.plan || existingSub.planType,
+        maxGpts: existingSub.maxGpts,
+        gptIds: existingSub.gptIds,
+        productName: existingSub.productName
+      }
     });
 
     return { success: true };
@@ -782,6 +802,10 @@ export const updateUserStripeCustomerId = mutation({
   }
 });
 
+/**
+ * @deprecated Use convex/subscriptions.ts upsertSubscription instead.
+ * This function will be removed after full migration is verified.
+ */
 export const updateUserSubscription = mutation({
   args: {
     clerkId: v.string(),
@@ -820,9 +844,26 @@ export const updateUserSubscription = mutation({
       throw new Error("User not found");
     }
 
-    await ctx.db.patch(user._id, {
-      subscription: args.subscriptionData,
-      updatedAt: Date.now()
+    await ctx.runMutation(api.subscriptions.upsertSubscription, {
+      userId: user._id,
+      clerkUserId: args.clerkId,
+      stripeData: {
+        stripeSubscriptionId: args.subscriptionData.stripeSubscriptionId,
+        stripeCustomerId: user.stripeCustomerId || "",
+        status: args.subscriptionData.status,
+        productId: args.subscriptionData.productId,
+        priceId: args.subscriptionData.priceId,
+        currentPeriodStart: Date.now(),
+        currentPeriodEnd: args.subscriptionData.currentPeriodEnd,
+        cancelAtPeriodEnd: args.subscriptionData.cancelAtPeriodEnd,
+        canceledAt:
+          args.subscriptionData.status === "canceled" ? Date.now() : undefined
+      },
+      packageData: {
+        planType: args.subscriptionData.plan,
+        maxGpts: args.subscriptionData.maxGpts,
+        gptIds: args.subscriptionData.gptIds
+      }
     });
 
     return { success: true };
@@ -919,7 +960,6 @@ export const getOrCreateUserFromWebhook = mutation({
       imageUrl: args.imageUrl,
       role: "user", // Default role
       stripeCustomerId: undefined, // Will be set later by webhook
-      subscription: undefined,
       aiCredits: 10, // Starter credits
       aiCreditsResetAt: undefined,
       createdAt: Date.now(),
