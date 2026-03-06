@@ -14,6 +14,7 @@ type WebhookHandlerResult = {
   errorCode?: string;
   message?: string;
   statusCode?: number;
+  action?: string;
 };
 
 // ✅ STEP 1: Verify Stripe Signature
@@ -75,7 +76,8 @@ export async function POST(request: Request) {
         {
           received: false,
           error: result.errorCode ?? "WEBHOOK_FAILED",
-          message: result.message ?? "Webhook handling failed"
+          message: result.message ?? "Webhook handling failed",
+          ...(result.action ? { action: result.action } : {})
         },
         { status: result.statusCode ?? 400 }
       );
@@ -99,8 +101,12 @@ async function handleStripeEvent(
       );
 
     case "customer.subscription.created":
+      return await handleSubscriptionCreated(
+        event.data.object as Stripe.Subscription
+      );
+
     case "customer.subscription.updated":
-      return await handleSubscriptionUpdate(
+      return await handleSubscriptionUpdated(
         event.data.object as Stripe.Subscription
       );
 
@@ -123,6 +129,95 @@ async function handleStripeEvent(
       console.log(`ℹ️ Unhandled event: ${event.type}`);
       return { success: true };
   }
+}
+
+function isMaxSubscriptionsReachedError(error: unknown): boolean {
+  const maybeError = error as any;
+  if (maybeError?.data?.code === "MAX_SUBSCRIPTIONS_REACHED") return true;
+  if (maybeError?.code === "MAX_SUBSCRIPTIONS_REACHED") return true;
+
+  const raw = JSON.stringify(error);
+  return typeof raw === "string" && raw.includes("MAX_SUBSCRIPTIONS_REACHED");
+}
+
+async function handleMaxSubscriptionReachedError({
+  error,
+  eventType,
+  subscription,
+  clerkUserId,
+  triggeredBy
+}: {
+  error: unknown;
+  eventType:
+    | "customer.subscription.created"
+    | "customer.subscription.updated"
+    | "checkout.session.completed"
+    | "invoice.payment_succeeded"
+    | "invoice.payment_failed";
+  subscription: Stripe.Subscription;
+  clerkUserId: string;
+  triggeredBy: string;
+}): Promise<WebhookHandlerResult | null> {
+  if (!isMaxSubscriptionsReachedError(error)) {
+    return null;
+  }
+
+  const shouldAutoCancel = eventType !== "customer.subscription.updated";
+  if (shouldAutoCancel) {
+    try {
+      await stripe.subscriptions.cancel(subscription.id);
+
+      const invoices = await stripe.invoices.list({
+        subscription: subscription.id,
+        limit: 1
+      });
+
+      const latestInvoice = invoices.data[0];
+      const latestInvoiceAny = latestInvoice as any;
+      const latestPaymentIntentId =
+        typeof latestInvoiceAny?.payment_intent === "string"
+          ? latestInvoiceAny.payment_intent
+          : latestInvoiceAny?.payment_intent?.id;
+
+      if (latestPaymentIntentId && (latestInvoice?.amount_paid ?? 0) > 0) {
+        await stripe.refunds.create({
+          payment_intent: latestPaymentIntentId,
+          reason: "duplicate"
+        });
+        console.log(
+          `[webhook] Auto-refunded over-limit subscription ${subscription.id} for customer ${subscription.customer}`
+        );
+      } else {
+        console.log(
+          `[webhook] Auto-canceled over-limit subscription ${subscription.id} (no charge to refund)`
+        );
+      }
+
+      console.warn("[SUBSCRIPTION_CAP_EXCEEDED]", {
+        stripeSubscriptionId: subscription.id,
+        stripeCustomerId: subscription.customer,
+        clerkUserId,
+        timestamp: new Date().toISOString(),
+        action: "auto_canceled_and_refunded",
+        triggeredBy
+      });
+    } catch (stripeErr) {
+      console.error(
+        `[webhook] Failed to auto-cancel/refund over-limit subscription ${subscription.id}:`,
+        stripeErr
+      );
+    }
+  }
+
+  return {
+    success: false,
+    statusCode: 409,
+    errorCode: "MAX_SUBSCRIPTIONS_REACHED",
+    action: shouldAutoCancel ? "subscription_auto_canceled" : undefined,
+    message: shouldAutoCancel
+      ? "Maximum of 6 active subscriptions reached; over-limit subscription auto-canceled"
+      : "Maximum of 6 active subscriptions reached"
+  };
 }
 
 // ============================================================================
@@ -378,8 +473,8 @@ async function syncAllSubscriptionUpdates(
 // EVENT HANDLERS
 // ============================================================================
 
-async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
-  console.log(`📝 handleSubscriptionUpdate: ${subscription.id}`);
+async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
+  console.log(`📝 handleSubscriptionCreated: ${subscription.id}`);
 
   const customerId = subscription.customer as string;
   const clerkUserId = await resolveClerkUserId(subscription, customerId);
@@ -392,15 +487,49 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
   try {
     await syncAllSubscriptionUpdates(clerkUserId, subscription);
   } catch (error: any) {
-    const raw = JSON.stringify(error);
-    if (raw.includes("MAX_SUBSCRIPTIONS_REACHED")) {
-      return {
-        success: false,
-        statusCode: 409,
-        errorCode: "MAX_SUBSCRIPTIONS_REACHED",
-        message: "Maximum of 6 active subscriptions reached"
-      };
+    const handled = await handleMaxSubscriptionReachedError({
+      error,
+      eventType: "customer.subscription.created",
+      subscription,
+      clerkUserId,
+      triggeredBy: "upsertSubscription"
+    });
+
+    if (handled) {
+      return handled;
     }
+
+    throw error;
+  }
+
+  return { success: true };
+}
+
+async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
+  console.log(`📝 handleSubscriptionUpdated: ${subscription.id}`);
+
+  const customerId = subscription.customer as string;
+  const clerkUserId = await resolveClerkUserId(subscription, customerId);
+
+  if (clerkUserId === null) {
+    return { success: true };
+  }
+
+  try {
+    await syncAllSubscriptionUpdates(clerkUserId, subscription);
+  } catch (error: any) {
+    const handled = await handleMaxSubscriptionReachedError({
+      error,
+      eventType: "customer.subscription.updated",
+      subscription,
+      clerkUserId,
+      triggeredBy: "upsertSubscription"
+    });
+
+    if (handled) {
+      return handled;
+    }
+
     throw error;
   }
 
@@ -443,10 +572,13 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
 
   console.log(`  → Fetching subscription: ${subscriptionId}`);
 
+  let subscription: Stripe.Subscription | null = null;
+  let clerkUserId: string | null = null;
+
   try {
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    subscription = await stripe.subscriptions.retrieve(subscriptionId);
     const customerId = subscription.customer as string;
-    const clerkUserId = await resolveClerkUserId(subscription, customerId);
+    clerkUserId = await resolveClerkUserId(subscription, customerId);
 
     if (clerkUserId === null) {
       return { success: true }; // External purchase saved as pending
@@ -455,6 +587,20 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
     await syncAllSubscriptionUpdates(clerkUserId, subscription);
     return { success: true };
   } catch (error) {
+    if (subscription) {
+      const handled = await handleMaxSubscriptionReachedError({
+        error,
+        eventType: "invoice.payment_succeeded",
+        subscription,
+        clerkUserId: clerkUserId ?? "unknown",
+        triggeredBy: "upsertSubscription"
+      });
+
+      if (handled) {
+        return handled;
+      }
+    }
+
     console.error(`  ❌ Failed to process payment_succeeded:`, error);
     return { success: false };
   }
@@ -474,9 +620,12 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
 
   console.log(`  → Fetching subscription: ${subscriptionId}`);
 
+  let subscription: Stripe.Subscription | null = null;
+  let clerkUserId: string | null = null;
+
   try {
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    const clerkUserId = await resolveClerkUserId(subscription, customerId);
+    subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    clerkUserId = await resolveClerkUserId(subscription, customerId);
 
     if (clerkUserId === null) {
       return { success: true }; // External purchase saved as pending
@@ -498,6 +647,20 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
 
     return { success: true };
   } catch (error) {
+    if (subscription) {
+      const handled = await handleMaxSubscriptionReachedError({
+        error,
+        eventType: "invoice.payment_failed",
+        subscription,
+        clerkUserId: clerkUserId ?? "unknown",
+        triggeredBy: "upsertSubscription"
+      });
+
+      if (handled) {
+        return handled;
+      }
+    }
+
     console.error(`  ❌ Failed to process payment_failed:`, error);
     return { success: false };
   }
@@ -517,10 +680,13 @@ async function handleCheckoutSessionCompleted(
 
   console.log(`  → Fetching subscription: ${subscriptionId}`);
 
+  let subscription: Stripe.Subscription | null = null;
+  let clerkUserId: string | null = null;
+
   try {
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    subscription = await stripe.subscriptions.retrieve(subscriptionId);
     const customerId = subscription.customer as string;
-    const clerkUserId = await resolveClerkUserId(subscription, customerId);
+    clerkUserId = await resolveClerkUserId(subscription, customerId);
 
     if (clerkUserId === null) {
       return { success: true }; // External purchase saved as pending
@@ -529,6 +695,20 @@ async function handleCheckoutSessionCompleted(
     await syncAllSubscriptionUpdates(clerkUserId, subscription);
     return { success: true };
   } catch (error) {
+    if (subscription) {
+      const handled = await handleMaxSubscriptionReachedError({
+        error,
+        eventType: "checkout.session.completed",
+        subscription,
+        clerkUserId: clerkUserId ?? "unknown",
+        triggeredBy: "upsertSubscription"
+      });
+
+      if (handled) {
+        return handled;
+      }
+    }
+
     console.error(`  ❌ Failed to process checkout:`, error);
     return { success: false };
   }

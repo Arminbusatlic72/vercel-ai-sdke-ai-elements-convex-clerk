@@ -11,6 +11,7 @@
 import type * as chats from "../chats.js";
 import type * as gptAccess from "../gptAccess.js";
 import type * as gpts from "../gpts.js";
+import type * as lib_subscriptionUtils from "../lib/subscriptionUtils.js";
 import type * as messages from "../messages.js";
 import type * as packages from "../packages.js";
 import type * as project from "../project.js";
@@ -31,6 +32,7 @@ declare const fullApi: ApiFromModules<{
   chats: typeof chats;
   gptAccess: typeof gptAccess;
   gpts: typeof gpts;
+  "lib/subscriptionUtils": typeof lib_subscriptionUtils;
   messages: typeof messages;
   packages: typeof packages;
   project: typeof project;

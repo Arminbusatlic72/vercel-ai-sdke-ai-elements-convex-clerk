@@ -14,9 +14,6 @@ type SubscriptionStatus =
   | "unpaid"
   | "paused";
 
-// Update PlanType to match your packages
-type PlanType = "sandbox" | "clientProject";
-
 type CreateSubscriptionResult = {
   success: true;
   subscriptionId: string;
@@ -56,223 +53,58 @@ const SUBSCRIPTION_PACKAGES = {
   }
 };
 
-// Helper to get package from price ID
-const getPackageFromPriceId = (priceId: string) => {
-  // Map price IDs to package keys based on environment variables
-  const priceToKeyMap: Record<string, string> = {
-    [process.env.STRIPE_PRICE_SANDBOX_LEVEL_MONTHLY || ""]: "sandbox-level",
-    [process.env.STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY || ""]:
-      "client-project",
-    [process.env.STRIPE_PRICE_ANALYZING_TRENDS_FREE || ""]: "analyzing-trends",
-    [process.env.STRIPE_PRICE_SUMMER_SANDBOX_FREE || ""]: "sandbox-summer",
-    [process.env.STRIPE_PRICE_WORKSHOP_SANDBOX_FREE || ""]: "sandbox-workshop",
-    [process.env.STRIPE_PRICE_CLASSROOM_SPEAKER_FREE || ""]: "gpts-classroom",
-    [process.env.STRIPE_PRICE_SUBSTACK_GPT_FREE || ""]: "substack-gpt"
-  };
+/**
+ * Resolves package config from database using stripeProductId (preferred)
+ * and stripePriceId (fallback).
+ */
+async function resolvePackageFromStripe(
+  ctx: any,
+  {
+    priceId,
+    productId
+  }: {
+    priceId?: string;
+    productId?: string;
+  }
+): Promise<{
+  packageId: any;
+  packageKey: string;
+  packageName: string;
+  plan: string;
+  maxGpts: number;
+  gptIds: string[];
+} | null> {
+  let pkg = null;
 
-  const packageKey = priceToKeyMap[priceId];
-  if (!packageKey) {
-    throw new Error(
-      `Unknown price ID: ${priceId}. Expected one of: ${Object.keys(
-        priceToKeyMap
-      )
-        .filter((k) => k)
-        .join(", ")}`
-    );
+  if (productId) {
+    pkg = await ctx.runQuery(api.packages.getPackageByProductId, {
+      stripeProductId: productId
+    });
   }
 
-  // Map package keys to plan types and their configurations
-  const packageConfigs: Record<
-    string,
-    { plan: PlanType; maxGpts: number; aiCredits: number }
-  > = {
-    "sandbox-level": {
-      plan: "sandbox",
-      maxGpts: 12,
-      aiCredits: 50000
-    },
-    "client-project": {
-      plan: "clientProject",
-      maxGpts: 1,
-      aiCredits: 1000
-    },
-    "analyzing-trends": {
-      plan: "sandbox",
-      maxGpts: 4,
-      aiCredits: 5000
-    },
-    "sandbox-summer": {
-      plan: "sandbox",
-      maxGpts: 3,
-      aiCredits: 3000
-    },
-    "sandbox-workshop": {
-      plan: "sandbox",
-      maxGpts: 4,
-      aiCredits: 4000
-    },
-    "gpts-classroom": {
-      plan: "sandbox",
-      maxGpts: 1,
-      aiCredits: 1000
-    },
-    "substack-gpt": {
-      plan: "sandbox",
-      maxGpts: 1,
-      aiCredits: 1000
-    }
-  };
-
-  const config = packageConfigs[packageKey];
-  if (!config) {
-    throw new Error(`No configuration found for package: ${packageKey}`);
+  if (!pkg && priceId) {
+    pkg = await ctx.runQuery(api.packages.getPackageByPriceId, {
+      stripePriceId: priceId
+    });
   }
+
+  if (!pkg) return null;
+
+  const gpts = await ctx.runQuery(api.gpts.getGptsByPackageId, {
+    packageId: pkg._id
+  });
+
+  const gptIds = gpts.map((g: any) => g.gptId);
 
   return {
-    plan: config.plan,
-    maxGpts: config.maxGpts,
-    gptIds: Array.from({ length: config.maxGpts }, (_, i) => `gpt-${i + 1}`),
-    aiCredits: config.aiCredits,
-    packageKey
+    packageId: pkg._id,
+    packageKey: pkg.key,
+    packageName: pkg.name,
+    plan: pkg.tier,
+    maxGpts: pkg.maxGpts ?? gptIds.length,
+    gptIds
   };
-};
-
-/**
- * Main Action to create a subscription.
- * Handles Customer creation, Payment Method attachment, and Subscription initialization.
- */
-
-// export const createSubscription = action({
-//   args: {
-//     clerkUserId: v.string(),
-//     stripePaymentMethodId: v.union(v.string(), v.null()),
-//     priceId: v.string(),
-//     email: v.string()
-//   },
-//   handler: async (_ctx, args) => {
-//     const stripe = getStripe(); // ✅ Initialize Stripe here
-
-//     // ─────────────────────────────────────────────
-//     // 1️⃣ Validate price ID
-//     // ─────────────────────────────────────────────
-//     if (!args.priceId.startsWith("price_")) {
-//       throw new Error(`Invalid priceId: ${args.priceId}`);
-//     }
-
-//     // ─────────────────────────────────────────────
-//     // 2️⃣ Load price + package mapping
-//     // ─────────────────────────────────────────────
-//     const price = await stripe.prices.retrieve(args.priceId);
-//     const isFree = price.unit_amount === 0;
-
-//     const packageDetails = getPackageFromPriceId(args.priceId);
-
-//     // ─────────────────────────────────────────────
-//     // 3️⃣ Find or create Stripe customer (CRITICAL)
-//     // ─────────────────────────────────────────────
-//     const existingCustomers = await stripe.customers.search({
-//       query: `metadata['clerkUserId']:'${args.clerkUserId}'`,
-//       limit: 1
-//     });
-
-//     let customer: Stripe.Customer;
-
-//     if (existingCustomers.data.length > 0) {
-//       customer = existingCustomers.data[0];
-
-//       // Ensure metadata stays correct
-//       await stripe.customers.update(customer.id, {
-//         metadata: {
-//           clerkUserId: args.clerkUserId,
-//           packageKey: packageDetails.packageKey,
-//           plan: packageDetails.plan
-//         }
-//       });
-//     } else {
-//       customer = await stripe.customers.create({
-//         email: args.email,
-//         metadata: {
-//           clerkUserId: args.clerkUserId,
-//           packageKey: packageDetails.packageKey,
-//           plan: packageDetails.plan
-//         }
-//       });
-//     }
-
-//     // ─────────────────────────────────────────────
-//     // 4️⃣ Prepare subscription params
-//     // ─────────────────────────────────────────────
-//     const subscriptionParams: Stripe.SubscriptionCreateParams = {
-//       customer: customer.id,
-//       items: [{ price: args.priceId }],
-//       metadata: {
-//         clerkUserId: args.clerkUserId,
-//         packageKey: packageDetails.packageKey,
-//         plan: packageDetails.plan
-//       }
-//     };
-
-//     // ─────────────────────────────────────────────
-//     // 5️⃣ Paid vs Free logic (IMPORTANT)
-//     // ─────────────────────────────────────────────
-//     if (isFree) {
-//       // ✅ Free plans become ACTIVE immediately
-//       subscriptionParams.payment_behavior = "allow_incomplete";
-//     } else {
-//       if (!args.stripePaymentMethodId) {
-//         throw new Error("Payment method required for paid subscription");
-//       }
-
-//       await stripe.paymentMethods.attach(args.stripePaymentMethodId, {
-//         customer: customer.id
-//       });
-
-//       await stripe.customers.update(customer.id, {
-//         invoice_settings: {
-//           default_payment_method: args.stripePaymentMethodId
-//         }
-//       });
-
-//       subscriptionParams.payment_behavior = "default_incomplete";
-//       subscriptionParams.expand = ["latest_invoice.payment_intent"];
-//     }
-
-//     // ─────────────────────────────────────────────
-//     // 6️⃣ Create subscription
-//     // ─────────────────────────────────────────────
-//     type ExpandedInvoice = Stripe.Invoice & {
-//       payment_intent?: Stripe.PaymentIntent | null;
-//     };
-
-//     const subscription = await stripe.subscriptions.create({
-//       ...subscriptionParams,
-//       expand: ["latest_invoice.payment_intent"]
-//     });
-
-//     let paymentIntent: Stripe.PaymentIntent | null = null;
-
-//     const latestInvoice = subscription.latest_invoice;
-
-//     if (latestInvoice && typeof latestInvoice !== "string") {
-//       const invoice = latestInvoice as ExpandedInvoice;
-//       paymentIntent = invoice.payment_intent ?? null;
-//     }
-
-//     // ─────────────────────────────────────────────
-//     // 7️⃣ Return ONLY what frontend needs
-//     // ─────────────────────────────────────────────
-//     return {
-//       subscriptionId: subscription.id,
-//       customerId: customer.id,
-//       status: subscription.status,
-//       clientSecret: paymentIntent?.client_secret ?? null,
-//       requiresAction: paymentIntent?.status === "requires_action",
-//       packageKey: packageDetails.packageKey,
-//       plan: packageDetails.plan,
-//       maxGpts: packageDetails.maxGpts
-//     };
-//   }
-// });
+}
 
 export const createSubscription = action({
   args: {
@@ -523,15 +355,26 @@ async function handleSubscriptionUpdate(
       return;
     }
 
-    // Get package details from price ID
-    console.log(`🔍 Looking up package for price ID: ${priceId}`);
-    const packageDetails = getPackageFromPriceId(priceId);
-    console.log(`✅ Found package:`, packageDetails);
+    const productId = (price.product as string) || undefined;
+
+    console.log(
+      `🔍 Resolving package for price ID: ${priceId}, product ID: ${productId}`
+    );
+    const packageData = await resolvePackageFromStripe(ctx, {
+      priceId,
+      productId
+    });
+    if (!packageData) {
+      console.warn(
+        `[resolvePackage] No package found for priceId=${priceId} productId=${productId}`
+      );
+      return;
+    }
+    console.log(`✅ Found package:`, packageData);
 
     // Fetch product name directly from price object
     let productName: string | null = null;
     try {
-      const productId = price.product as string;
       if (productId) {
         const product = await stripe.products.retrieve(productId);
         productName = product.name;
@@ -546,17 +389,6 @@ async function handleSubscriptionUpdate(
     });
 
     if (user) {
-      const packageDoc = await ctx.runQuery(api.packages.getPackageByPriceId, {
-        stripePriceId: priceId
-      });
-
-      const allGpts = await ctx.runQuery(api.gpts.listGpts, {});
-      const gptIds = packageDoc
-        ? allGpts
-            .filter((gpt: any) => gpt.packageId === packageDoc._id)
-            .map((gpt: any) => gpt.gptId)
-        : packageDetails.gptIds;
-
       console.log(
         `✅ Found user, syncing subscription via upsertSubscription...`
       );
@@ -582,12 +414,12 @@ async function handleSubscriptionUpdate(
             : undefined
         },
         packageData: {
-          packageId: packageDoc?._id,
-          packageName: packageDoc?.name,
-          planType: packageDoc?.key || packageDetails.plan,
-          maxGpts: packageDoc?.maxGpts ?? packageDetails.maxGpts,
-          gptIds,
-          productName: productName || packageDoc?.name || undefined
+          packageId: packageData.packageId,
+          packageName: packageData.packageName,
+          planType: packageData.packageKey || packageData.plan,
+          maxGpts: packageData.maxGpts,
+          gptIds: packageData.gptIds,
+          productName: productName || packageData.packageName || undefined
         }
       });
 

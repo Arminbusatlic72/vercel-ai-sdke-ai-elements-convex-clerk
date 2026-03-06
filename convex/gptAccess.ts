@@ -3,8 +3,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { Doc } from "./_generated/dataModel";
-
-const ACTIVE_STATUSES = new Set(["active", "trialing", "past_due"]);
+import { isEntitled } from "./lib/subscriptionUtils";
 
 async function getActiveSubscriptionsForUser(ctx: any, userId: any) {
   const rows = await ctx.db
@@ -12,7 +11,7 @@ async function getActiveSubscriptionsForUser(ctx: any, userId: any) {
     .withIndex("by_user_id", (q: any) => q.eq("userId", userId))
     .collect();
 
-  return rows.filter((row: any) => ACTIVE_STATUSES.has(row.status));
+  return rows.filter((row: any) => isEntitled(row));
 }
 
 async function getMergedGptIdsForUser(ctx: any, user: any): Promise<string[]> {

@@ -130,7 +130,7 @@ export default function FreePackageSection({
       {/* Activate Button */}
       <button
         onClick={onActivate}
-        disabled={loading || disabled}
+        disabled={loading}
         title={disabledReason}
         className="w-full py-4 px-6 bg-green-600 hover:bg-green-700 text-white font-semibold text-lg rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
       >

@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
+import { isEntitled } from "./lib/subscriptionUtils";
 
 type SubscriptionStatus =
   | "active"
@@ -116,7 +117,7 @@ async function syncUserSubscriptionCache(ctx: any, userId: Id<"users">) {
     .collect();
 
   const activeSubs = subs
-    .filter((sub: any) => isActiveStatus(sub.status as SubscriptionStatus))
+    .filter((sub: any) => isEntitled(sub))
     .sort(
       (a: any, b: any) =>
         (b.created ?? b._creationTime) - (a.created ?? a._creationTime)
@@ -224,11 +225,15 @@ async function upsertSubscriptionCore(
     .first();
 
   const enforceMaxSubscriptions = input.enforceMaxSubscriptions ?? true;
+  const incomingIsActive = isActiveStatus(input.stripeData.status);
+  const existingIsActive = existing
+    ? isActiveStatus(existing.status as SubscriptionStatus)
+    : false;
 
   if (
     enforceMaxSubscriptions &&
-    !existing &&
-    isActiveStatus(input.stripeData.status)
+    incomingIsActive &&
+    (!existing || !existingIsActive)
   ) {
     const activeCount = (
       await ctx.db
@@ -284,6 +289,29 @@ async function upsertSubscriptionCore(
     subscriptionId = existing._id;
   } else {
     subscriptionId = await ctx.db.insert("subscriptions", nextRow as any);
+
+    if (enforceMaxSubscriptions && incomingIsActive) {
+      const activeCountAfterInsert = (
+        await ctx.db
+          .query("subscriptions")
+          .withIndex("by_user_id", (q: any) => q.eq("userId", user._id))
+          .collect()
+      ).filter((sub: any) =>
+        isActiveStatus(sub.status as SubscriptionStatus)
+      ).length;
+
+      if (activeCountAfterInsert > 6) {
+        await ctx.db.delete(subscriptionId);
+        await syncUserSubscriptionCache(ctx, user._id);
+
+        throw new ConvexError({
+          code: "MAX_SUBSCRIPTIONS_REACHED",
+          message: "Maximum of 6 active subscriptions reached",
+          current: activeCountAfterInsert,
+          max: 6
+        });
+      }
+    }
   }
 
   await syncUserSubscriptionCache(ctx, user._id);
@@ -389,7 +417,7 @@ async function getUserSubscriptionsCore(
     .collect();
 
   const activeSubs = subs
-    .filter((sub: any) => isActiveStatus(sub.status as SubscriptionStatus))
+    .filter((sub: any) => isEntitled(sub))
     .sort(
       (a: any, b: any) =>
         (b.created ?? b._creationTime) - (a.created ?? a._creationTime)
@@ -419,6 +447,23 @@ export const getUserSubscriptions = query({
     clerkUserId: v.optional(v.string())
   },
   handler: async (ctx, args) => getUserSubscriptionsCore(ctx, args)
+});
+
+export const getUserActiveSubscriptionCount = query({
+  args: {
+    userId: v.optional(v.id("users")),
+    clerkUserId: v.optional(v.string())
+  },
+  handler: async (ctx, args) => {
+    const subs = await getUserSubscriptionsCore(ctx, args as any);
+    return {
+      activeCount: (subs as any[]).length,
+      statuses: (subs as any[]).map((sub: any) => sub.status),
+      cancelAtPeriodEnd: (subs as any[]).map(
+        (sub: any) => !!sub.cancelAtPeriodEnd
+      )
+    };
+  }
 });
 
 export const getUserGpts = query({
@@ -603,6 +648,39 @@ export const backfillUsersToSubscriptionsTable = mutation({
   }
 });
 
+export const fixFakeGptIds = internalMutation({
+  args: {
+    dryRun: v.optional(v.boolean())
+  },
+  handler: async (ctx, { dryRun = true }) => {
+    const subs = await ctx.db.query("subscriptions").collect();
+    let fixed = 0;
+
+    for (const sub of subs as any[]) {
+      const hasFakeIds = (sub.gptIds ?? []).some((id: string) =>
+        /^gpt-\d+$/.test(id)
+      );
+      if (!hasFakeIds) continue;
+
+      if (!dryRun) {
+        const pkg = await resolvePackageFromStripe(
+          ctx,
+          sub.productId,
+          sub.priceId
+        );
+        const realGptIds = await deriveSubscriptionGptIds(ctx, pkg?._id);
+
+        await ctx.db.patch(sub._id, { gptIds: realGptIds });
+        await syncUserSubscriptionCache(ctx, sub.userId);
+      }
+
+      fixed += 1;
+    }
+
+    return { dryRun, fixed, total: subs.length };
+  }
+});
+
 // Backward-compatible wrapper used by existing routes
 export const syncSubscriptionFromStripe = mutation({
   args: {
@@ -630,31 +708,45 @@ export const syncSubscriptionFromStripe = mutation({
     );
     const gptIds = await deriveSubscriptionGptIds(ctx, pkg?._id);
 
-    return await upsertSubscriptionCore(ctx, {
-      clerkUserId: args.clerkUserId,
-      stripeData: {
-        stripeSubscriptionId: args.stripeSubscriptionId,
-        stripeCustomerId: args.stripeCustomerId,
-        status: args.status as SubscriptionStatus,
-        productId: args.productId,
-        priceId: args.priceId,
-        currentPeriodStart: args.currentPeriodStart,
-        currentPeriodEnd: args.currentPeriodEnd,
-        cancelAtPeriodEnd: args.cancelAtPeriodEnd,
-        canceledAt: args.canceledAt,
-        trialEndDate: args.trialEndDate,
-        paymentFailureGracePeriodEnd: args.paymentFailureGracePeriodEnd,
-        lastPaymentFailedAt: args.lastPaymentFailedAt
-      },
-      packageData: {
-        packageId: pkg?._id,
-        packageName: pkg?.name,
-        planType: args.planType ?? pkg?.key,
-        maxGpts: args.maxGpts ?? pkg?.maxGpts,
-        gptIds,
-        productName: pkg?.name
+    try {
+      return await upsertSubscriptionCore(ctx, {
+        clerkUserId: args.clerkUserId,
+        stripeData: {
+          stripeSubscriptionId: args.stripeSubscriptionId,
+          stripeCustomerId: args.stripeCustomerId,
+          status: args.status as SubscriptionStatus,
+          productId: args.productId,
+          priceId: args.priceId,
+          currentPeriodStart: args.currentPeriodStart,
+          currentPeriodEnd: args.currentPeriodEnd,
+          cancelAtPeriodEnd: args.cancelAtPeriodEnd,
+          canceledAt: args.canceledAt,
+          trialEndDate: args.trialEndDate,
+          paymentFailureGracePeriodEnd: args.paymentFailureGracePeriodEnd,
+          lastPaymentFailedAt: args.lastPaymentFailedAt
+        },
+        packageData: {
+          packageId: pkg?._id,
+          packageName: pkg?.name,
+          planType: args.planType ?? pkg?.key,
+          maxGpts: args.maxGpts ?? pkg?.maxGpts,
+          gptIds,
+          productName: pkg?.name
+        }
+      });
+    } catch (error: any) {
+      const errorCode = error?.data?.code ?? error?.code;
+      if (errorCode === "MAX_SUBSCRIPTIONS_REACHED") {
+        return {
+          success: false,
+          errorCode: "MAX_SUBSCRIPTIONS_REACHED",
+          current: error?.data?.current,
+          max: error?.data?.max ?? 6
+        };
       }
-    });
+
+      throw error;
+    }
   }
 });
 

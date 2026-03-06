@@ -22,7 +22,7 @@ export default function CheckoutForm() {
   const packages: Package[] = useQuery(api.packages.getAllPackages) || [];
   const userSubscriptions = useQuery(
     api.subscriptions.getUserSubscriptions,
-    {}
+    user?.id ? { clerkUserId: user.id } : "skip"
   );
 
   if (userSubscriptions === undefined) {
@@ -106,6 +106,7 @@ export default function CheckoutForm() {
 
   const handlePaidSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (disabledReason) {
       setError(disabledReason);
       return;
@@ -152,8 +153,18 @@ export default function CheckoutForm() {
       });
 
       const result = await response.json();
-      if (!response.ok)
+
+      if (!response.ok) {
+        if (result.error === "ALREADY_SUBSCRIBED") {
+          setError("You already have an active subscription for this package.");
+          return;
+        }
+        if (result.error === "MAX_SUBSCRIPTIONS_REACHED") {
+          setError("You have reached the maximum of 6 active subscriptions.");
+          return;
+        }
         throw new Error(result.error || "Subscription creation failed");
+      }
 
       if (result.requiresAction) {
         const { error: confirmError } = await stripe.confirmCardPayment(
@@ -206,6 +217,14 @@ export default function CheckoutForm() {
       const result = await response.json();
 
       if (!response.ok) {
+        if (result.error === "ALREADY_SUBSCRIBED") {
+          setError("You already have an active subscription for this package.");
+          return;
+        }
+        if (result.error === "MAX_SUBSCRIPTIONS_REACHED") {
+          setError("You have reached the maximum of 6 active subscriptions.");
+          return;
+        }
         throw new Error(result.error || "Failed to activate package");
       }
 

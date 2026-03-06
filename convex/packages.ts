@@ -374,6 +374,54 @@ const PACKAGE_CATALOG = [
     priceAmount: 0,
     recurring: "monthly" as const,
     description: ""
+  },
+  {
+    name: "Narrative Systems Workshop",
+    key: "narrative-systems-workshop",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_NARATIVE!,
+    stripeProductId: process.env.STRIPE_PRODUCT_NARATIVE!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Structured Foresight Workshop",
+    key: "structured-foresight-workshop",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_STRUCTURED!,
+    stripeProductId: process.env.STRIPE_PRODUCT_STRUCTURED!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Speculative Futures Workshop",
+    key: "speculative-futures-workshop",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_SPECULATIVE_FUTURES!,
+    stripeProductId: process.env.STRIPE_PRODUCT_SPECULATIVE_FUTURES!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
+  },
+  {
+    name: "Language & Meaning Workshop",
+    key: "language-meaning-workshop",
+    tier: "free",
+    stripePriceId: process.env.STRIPE_PRICE_LANGUAGE!,
+    stripeProductId: process.env.STRIPE_PRODUCT_LANGUAGE!,
+    maxGpts: undefined,
+    durationDays: undefined,
+    priceAmount: 0,
+    recurring: "monthly" as const,
+    description: ""
   }
 ];
 

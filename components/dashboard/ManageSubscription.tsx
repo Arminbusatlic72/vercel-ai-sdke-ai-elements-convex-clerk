@@ -22,6 +22,7 @@ import {
   CheckCircle
 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { getGraceLabel } from "@/convex/lib/subscriptionUtils";
 
 interface ManageSubscriptionProps {
   data: SubscriptionData;
@@ -337,6 +338,12 @@ export default function ManageSubscription({
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
+              {subscription.status === "past_due" && (
+                <div className="text-sm text-orange-500">
+                  ⚠️ Payment failed — {getGraceLabel(subscription)}
+                </div>
+              )}
+
               <div className="space-y-2 rounded-md border p-3">
                 <p className="text-sm font-medium">GPTs</p>
                 <p className="text-xs text-muted-foreground">

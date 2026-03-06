@@ -174,11 +174,6 @@ async function claimPendingSubscription(
 
     if (!user) return;
 
-    // Map price to plan type
-    // const planType = mapProductToPlanType(pending.productId || "");
-    // const maxGpts = mapPlanToMaxGpts(planType)
-    // ;
-
     const pkg = await ctx.db
       .query("packages")
       .withIndex("by_stripeProductId", (q: any) =>
@@ -235,41 +230,6 @@ async function claimPendingSubscription(
   }
 }
 
-// Helper: Map price ID to plan type
-// function mapPriceToPlanType(
-//   priceId: string
-// ): "sandbox" | "clientProject" | "basic" | "pro" {
-//   if (!priceId) return "sandbox";
-//   if (priceId === process.env.STRIPE_PRICE_CLIENT_PROJECT_GPT_MONTHLY)
-//     return "clientProject";
-//   if (priceId === process.env.STRIPE_PRICE_BASIC_ID) return "basic";
-//   if (priceId === process.env.STRIPE_PRICE_PRO_ID) return "pro";
-//   return "sandbox";
-// }
-function mapProductToPlanType(
-  productId: string
-): "sandbox" | "clientProject" | "basic" | "pro" {
-  if (!productId) return "sandbox";
-
-  if (productId === process.env.STRIPE_PRODUCT_CLIENT_PROJECT)
-    return "clientProject";
-  if (productId === process.env.STRIPE_PRODUCT_BASIC) return "basic";
-  if (productId === process.env.STRIPE_PRODUCT_PRO) return "pro";
-
-  return "sandbox";
-}
-
-// Helper: Map plan to max GPTs
-function mapPlanToMaxGpts(plan: string) {
-  const map: Record<string, number> = {
-    sandbox: 12,
-    clientProject: 1,
-    basic: 3,
-    pro: 6
-  };
-  return map[plan] || 1;
-}
-
 /**
  * Update user subscription (for use with Stripe webhooks)
  */
@@ -309,57 +269,10 @@ export const updateSubscription = mutation({
     }),
     aiCredits: v.optional(v.number())
   },
-  handler: async (ctx, args) => {
-    // Use provided userId or look up by clerkId
-    let user;
-    if (args.userId) {
-      user = await ctx.db.get(args.userId);
-    } else {
-      user = await ctx.db
-        .query("users")
-        .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-        .first();
-    }
-
-    if (!user) {
-      throw new Error(`User with clerkId ${args.clerkId} not found`);
-    }
-
-    const patchData: any = {
-      stripeCustomerId: args.stripeCustomerId,
-      updatedAt: Date.now()
-    };
-
-    if (args.aiCredits !== undefined) {
-      patchData.aiCredits = args.aiCredits;
-    }
-
-    await ctx.db.patch(user._id, patchData);
-
-    await ctx.runMutation(api.subscriptions.upsertSubscription, {
-      userId: user._id,
-      clerkUserId: args.clerkId,
-      stripeData: {
-        stripeSubscriptionId: args.subscriptionData.stripeSubscriptionId,
-        stripeCustomerId: args.stripeCustomerId,
-        status: args.subscriptionData.status,
-        productId: args.subscriptionData.productId,
-        priceId: args.subscriptionData.priceId,
-        currentPeriodStart: Date.now(),
-        currentPeriodEnd: args.subscriptionData.currentPeriodEnd,
-        cancelAtPeriodEnd: args.subscriptionData.cancelAtPeriodEnd,
-        canceledAt:
-          args.subscriptionData.status === "canceled" ? Date.now() : undefined
-      },
-      packageData: {
-        planType: args.subscriptionData.plan,
-        maxGpts: args.subscriptionData.maxGpts,
-        gptIds: args.subscriptionData.gptIds,
-        productName: args.subscriptionData.productName
-      }
-    });
-
-    return { success: true };
+  handler: async (_ctx, _args) => {
+    throw new Error(
+      "DEPRECATED: This mutation is no longer active. Use api.subscriptions.upsertSubscription instead."
+    );
   }
 });
 
@@ -431,51 +344,10 @@ export const updateSubscriptionInternal = internalMutation({
     }),
     aiCredits: v.optional(v.number())
   },
-  handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-
-    if (!user) {
-      console.error(`User with clerkId ${args.clerkId} not found`);
-      return { success: false, error: "User not found" };
-    }
-
-    const patchData: any = {
-      stripeCustomerId: args.stripeCustomerId,
-      updatedAt: Date.now()
-    };
-
-    if (args.aiCredits !== undefined) {
-      patchData.aiCredits = args.aiCredits;
-    }
-
-    await ctx.db.patch(user._id, patchData);
-
-    await ctx.runMutation(api.subscriptions.upsertSubscription, {
-      userId: user._id,
-      clerkUserId: args.clerkId,
-      stripeData: {
-        stripeSubscriptionId: args.subscriptionData.stripeSubscriptionId,
-        stripeCustomerId: args.stripeCustomerId,
-        status: args.subscriptionData.status,
-        productId: args.subscriptionData.productId,
-        priceId: args.subscriptionData.priceId,
-        currentPeriodStart: Date.now(),
-        currentPeriodEnd: args.subscriptionData.currentPeriodEnd,
-        cancelAtPeriodEnd: args.subscriptionData.cancelAtPeriodEnd,
-        canceledAt:
-          args.subscriptionData.status === "canceled" ? Date.now() : undefined
-      },
-      packageData: {
-        planType: args.subscriptionData.plan,
-        maxGpts: args.subscriptionData.maxGpts,
-        gptIds: args.subscriptionData.gptIds
-      }
-    });
-
-    return { success: true };
+  handler: async (_ctx, _args) => {
+    throw new Error(
+      "DEPRECATED: This mutation is no longer active. Use api.subscriptions.upsertSubscription instead."
+    );
   }
 });
 
@@ -510,89 +382,12 @@ export const updateSubscriptionByStripeId = internalMutation({
       )
     )
   },
-  handler: async (ctx, args) => {
-    const existingSub = await ctx.db
-      .query("subscriptions")
-      .withIndex("by_stripe_subscription_id", (q: any) =>
-        q.eq("stripeSubscriptionId", args.stripeSubscriptionId)
-      )
-      .first();
-
-    if (!existingSub) {
-      console.error(
-        `User with stripeSubscriptionId ${args.stripeSubscriptionId} not found`
-      );
-      return { success: false, error: "User not found" };
-    }
-
-    const user = await ctx.db.get(existingSub.userId);
-    if (!user) return { success: false, error: "User not found" };
-
-    // Ensure currentPeriodEnd is always a number, not undefined
-    const currentPeriodEnd =
-      args.currentPeriodEnd !== undefined
-        ? args.currentPeriodEnd
-        : existingSub.currentPeriodEnd !== undefined
-          ? existingSub.currentPeriodEnd
-          : Date.now() + 30 * 24 * 60 * 60 * 1000; // Default: 30 days from now
-
-    await ctx.runMutation(api.subscriptions.upsertSubscription, {
-      userId: user._id,
-      clerkUserId: user.clerkId,
-      stripeData: {
-        stripeSubscriptionId: args.stripeSubscriptionId,
-        stripeCustomerId:
-          existingSub.stripeCustomerId || user.stripeCustomerId || "",
-        status: args.status,
-        productId: existingSub.productId,
-        priceId: existingSub.priceId,
-        currentPeriodStart: existingSub.currentPeriodStart,
-        currentPeriodEnd,
-        cancelAtPeriodEnd:
-          args.cancelAtPeriodEnd !== undefined
-            ? args.cancelAtPeriodEnd
-            : existingSub.cancelAtPeriodEnd,
-        canceledAt:
-          args.status === "canceled" ? Date.now() : existingSub.canceledAt
-      },
-      packageData: {
-        planType: args.plan || existingSub.planType,
-        maxGpts: existingSub.maxGpts,
-        gptIds: existingSub.gptIds,
-        productName: existingSub.productName
-      }
-    });
-
-    return { success: true };
+  handler: async (_ctx, _args) => {
+    throw new Error(
+      "DEPRECATED: This mutation is no longer active. Use api.subscriptions.upsertSubscription instead."
+    );
   }
 });
-
-/**
- * Set Stripe customer ID for a user
- */
-// export const setStripeCustomerId = mutation({
-//   args: {
-//     stripeCustomerId: v.string()
-//   },
-//   handler: async (ctx, args) => {
-//     const identity = await ctx.auth.getUserIdentity();
-//     if (!identity) throw new Error("Not authenticated");
-
-//     const user = await ctx.db
-//       .query("users")
-//       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-//       .first();
-
-//     if (!user) throw new Error("User not found");
-
-//     await ctx.db.patch(user._id, {
-//       stripeCustomerId: args.stripeCustomerId,
-//       updatedAt: Date.now()
-//     });
-
-//     return { success: true };
-//   }
-// });
 
 export const setStripeCustomerId = internalMutation({
   args: {
@@ -834,66 +629,12 @@ export const updateUserSubscription = mutation({
       gptIds: v.array(v.string())
     })
   },
-  handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    await ctx.runMutation(api.subscriptions.upsertSubscription, {
-      userId: user._id,
-      clerkUserId: args.clerkId,
-      stripeData: {
-        stripeSubscriptionId: args.subscriptionData.stripeSubscriptionId,
-        stripeCustomerId: user.stripeCustomerId || "",
-        status: args.subscriptionData.status,
-        productId: args.subscriptionData.productId,
-        priceId: args.subscriptionData.priceId,
-        currentPeriodStart: Date.now(),
-        currentPeriodEnd: args.subscriptionData.currentPeriodEnd,
-        cancelAtPeriodEnd: args.subscriptionData.cancelAtPeriodEnd,
-        canceledAt:
-          args.subscriptionData.status === "canceled" ? Date.now() : undefined
-      },
-      packageData: {
-        planType: args.subscriptionData.plan,
-        maxGpts: args.subscriptionData.maxGpts,
-        gptIds: args.subscriptionData.gptIds
-      }
-    });
-
-    return { success: true };
+  handler: async (_ctx, _args) => {
+    throw new Error(
+      "DEPRECATED: This mutation is no longer active. Use api.subscriptions.upsertSubscription instead."
+    );
   }
 });
-
-// convex/users.ts
-// export const updateStripeCustomerId = mutation({
-//   args: {
-//     clerkId: v.string(),
-//     stripeCustomerId: v.string()
-//   },
-//   handler: async (ctx, args) => {
-//     const user = await ctx.db
-//       .query("users")
-//       .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-//       .first();
-
-//     if (!user) {
-//       throw new Error("User not found");
-//     }
-
-//     await ctx.db.patch(user._id, {
-//       stripeCustomerId: args.stripeCustomerId,
-//       updatedAt: Date.now()
-//     });
-
-//     return { success: true };
-//   }
-// });
 
 /**
  * Get user by Stripe Customer ID (for webhooks)

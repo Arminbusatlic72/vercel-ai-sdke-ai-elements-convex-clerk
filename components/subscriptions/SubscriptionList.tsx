@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { getGraceLabel } from "@/convex/lib/subscriptionUtils";
 
 type SubscriptionItem = {
   _id: string;
@@ -17,6 +18,7 @@ type SubscriptionItem = {
   packageName?: string;
   currentPeriodEnd?: number;
   cancelAtPeriodEnd?: boolean;
+  paymentFailureGracePeriodEnd?: number;
 };
 
 interface SubscriptionListProps {
@@ -133,6 +135,12 @@ function SubscriptionCard({
 
         {subscription.cancelAtPeriodEnd && (
           <p className="text-xs text-amber-700">⚠️ Cancels at period end</p>
+        )}
+
+        {subscription.status === "past_due" && (
+          <p className="text-xs text-orange-600">
+            ⚠️ Payment failed — {getGraceLabel(subscription)}
+          </p>
         )}
       </CardHeader>
 

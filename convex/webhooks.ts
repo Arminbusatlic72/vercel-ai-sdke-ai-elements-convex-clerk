@@ -127,6 +127,37 @@ export const getPendingSubscriptionByEmail = query({
   }
 });
 
+async function resolvePendingPackage(
+  ctx: any,
+  {
+    productId,
+    priceId
+  }: {
+    productId?: string;
+    priceId?: string;
+  }
+) {
+  if (productId) {
+    const byProduct = await ctx.db
+      .query("packages")
+      .withIndex("by_stripeProductId", (q: any) =>
+        q.eq("stripeProductId", productId)
+      )
+      .first();
+    if (byProduct) return byProduct;
+  }
+
+  if (priceId) {
+    const byPrice = await ctx.db
+      .query("packages")
+      .withIndex("by_stripePriceId", (q: any) => q.eq("stripePriceId", priceId))
+      .first();
+    if (byPrice) return byPrice;
+  }
+
+  return null;
+}
+
 /**
  * Claim pending subscription when user signs up with email,
  * attach any pending subscription from Squarespace purchase
@@ -158,17 +189,17 @@ export const claimPendingSubscriptionByEmail = mutation({
       return { success: false, error: "User not found" };
     }
 
-    const planType = mapProductToPlanType(pending.productId || "");
-    const maxGpts = mapPlanToMaxGpts(planType);
+    const pkg = await resolvePendingPackage(ctx, {
+      productId: pending.productId,
+      priceId: pending.priceId
+    });
 
-    const pkg = pending.productId
-      ? await ctx.db
-          .query("packages")
-          .withIndex("by_stripeProductId", (q: any) =>
-            q.eq("stripeProductId", pending.productId)
-          )
-          .first()
-      : null;
+    if (!pkg) {
+      console.warn(
+        `No package for productId=${pending.productId} priceId=${pending.priceId}`
+      );
+      return { success: false, error: "Package not found" };
+    }
 
     const gpts = pkg
       ? await ctx.db
@@ -200,8 +231,8 @@ export const claimPendingSubscriptionByEmail = mutation({
       packageData: {
         packageId: pkg?._id,
         packageName: pkg?.name,
-        planType,
-        maxGpts,
+        planType: pkg.key,
+        maxGpts: pkg.maxGpts,
         gptIds: gpts.map((gpt: any) => gpt.gptId),
         productName: pkg?.name
       }
@@ -213,61 +244,3 @@ export const claimPendingSubscriptionByEmail = mutation({
     return { success: true, claimed: true };
   }
 });
-
-// Helper: Map product ID to plan type (productId is stable, priceId changes)
-function mapProductToPlanType(
-  productId: string
-): "sandbox" | "clientProject" | "basic" | "pro" {
-  if (!productId) return "sandbox";
-
-  const map: Record<string, "sandbox" | "clientProject" | "basic" | "pro"> = {
-    // Free/Sandbox products
-    [process.env.STRIPE_PRODUCT_CRISIS_SIMULATOR || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_CULTURE_MAPPING_TOOLKIT || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_DIAGNOSTIC_TOOLKIT || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_DIGITAL_FLANEUR_TOOLKIT || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_PACKAGING_ANALYSIS || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_REGIONAL_CODE_TOOLKIT || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_SPECULATIVE_FUTURES || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_SUBCULTURE_ANALYSIS || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_VISUALIZING_UNKNOWNS || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_LANGUAGE_MEANING_WORKSHOP || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_NARRATIVE_SYSTEMS || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_STRUCTURED_FORESIGHT || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_2026_TREND_THEME || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_ANALYZING_TRENDS || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_WORKSHOP_GPTS || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_RIKKYO_GPT || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_SUBSTACK_GPTS || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_SUMMER_SANDBOX || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_LINKEDIN_GPT || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_WORKSHOP_PRIMER || ""]: "sandbox",
-    [process.env.STRIPE_PRODUCT_SPACE_ANALYSIS_TOOLKIT || ""]: "sandbox",
-    // Paid products
-    [process.env.STRIPE_PRODUCT_SDNA_CLIENT_PROJECT || ""]: "clientProject",
-    [process.env.STRIPE_PRODUCT_BRAND_DECODER || ""]: "basic",
-    [process.env.STRIPE_PRODUCT_CONTRARIAN_TOOLKIT || ""]: "basic",
-    [process.env.STRIPE_PRODUCT_SDNA_STORYENGINE || ""]: "pro"
-  };
-
-  const planType = map[productId];
-  if (!planType) {
-    console.warn(
-      `⚠️ Unknown product ID "${productId}". Defaulting to "sandbox". Make sure the product ID is configured in environment variables.`
-    );
-    return "sandbox";
-  }
-
-  return planType;
-}
-
-// Helper: Map plan to max GPTs
-function mapPlanToMaxGpts(plan: string) {
-  const map: Record<string, number> = {
-    sandbox: 12,
-    clientProject: 1,
-    basic: 3,
-    pro: 6
-  };
-  return map[plan] || 1;
-}

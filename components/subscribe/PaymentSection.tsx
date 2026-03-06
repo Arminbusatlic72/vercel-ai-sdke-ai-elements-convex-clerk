@@ -273,7 +273,7 @@ export default function PaymentSection({
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={loading || !stripeEnabled || disabled}
+          disabled={loading || !stripeEnabled}
           title={disabledReason}
           className="w-full py-4 px-6 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-lg rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
         >
