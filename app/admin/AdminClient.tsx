@@ -62,6 +62,7 @@ export default function AdminClient() {
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingGeneralSettings, setIsSavingGeneralSettings] = useState(false);
+  const [selectedPackageId, setSelectedPackageId] = useState<string>("");
   const [pendingDeleteGptId, setPendingDeleteGptId] = useState<string | null>(
     null
   );
@@ -175,9 +176,6 @@ export default function AdminClient() {
       setIsSubmitting(false);
     }
   };
-  const [selectedPackageId, setSelectedPackageId] = useState<
-    Id<"packages"> | string | undefined
-  >("");
 
   const applyGptToForm = (g: GPTConfig) => {
     setGptId(g.gptId);
@@ -190,7 +188,7 @@ export default function AdminClient() {
     setApiKey(g.apiKey || "");
     setSystemPrompt(g.systemPrompt || "");
     setRagTriggerKeywordsInput((g.ragTriggerKeywords || []).join(", "));
-    setSelectedPackageId(g.packageId || "");
+    setSelectedPackageId(g.packageId ? String(g.packageId) : "");
     setIsEditing(true);
   };
 
@@ -210,7 +208,7 @@ export default function AdminClient() {
 
   const handleDeleteClick = (gptId: string) => {
     setPendingDeleteGptId(gptId);
-    setSelectedPackageId(undefined);
+    setSelectedPackageId("");
     modalActions.openConfirmDeleteGPT({
       gptId,
       name: gptId

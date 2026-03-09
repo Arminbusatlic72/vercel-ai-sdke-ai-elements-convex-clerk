@@ -117,7 +117,32 @@ export const upsertGpt = mutation({
     packageId: v.optional(v.id("packages"))
   },
   handler: async (ctx, args) => {
-    const { gptId, ...fields } = args;
+    console.log("upsertGpt called with args:", args);
+    const { gptId, packageId, ...fields } = args;
+
+    // Update subscriptions to include this GPT if they correspond to the package
+    if (packageId) {
+      // Find subscriptions with productId or priceId matching the package
+      const packageDoc = await ctx.db.get(packageId);
+      if (packageDoc) {
+        // Find by productId
+        const subsByProduct = await ctx.db
+          .query("subscriptions")
+          .withIndex("by_status", (q) => q.eq("status", "active"))
+          .collect();
+        for (const sub of subsByProduct) {
+          if (
+            sub.productId === packageDoc.stripeProductId ||
+            sub.priceId === packageDoc.stripePriceId
+          ) {
+            const gptIds = Array.isArray(sub.gptIds) ? sub.gptIds : [];
+            if (!gptIds.includes(gptId)) {
+              await ctx.db.patch(sub._id, { gptIds: [...gptIds, gptId] });
+            }
+          }
+        }
+      }
+    }
 
     const existing = await ctx.db
       .query("gpts")
@@ -125,8 +150,11 @@ export const upsertGpt = mutation({
       .unique();
 
     if (existing) {
-      await ctx.db.patch(existing._id, {
+      await ctx.db.replace(existing._id, {
+        gptId,
+        packageId,
         ...fields,
+        createdAt: existing.createdAt,
         updatedAt: Date.now()
       });
       return existing._id;
@@ -134,6 +162,7 @@ export const upsertGpt = mutation({
 
     return await ctx.db.insert("gpts", {
       gptId,
+      packageId,
       ...fields,
       createdAt: Date.now(),
       updatedAt: Date.now()
