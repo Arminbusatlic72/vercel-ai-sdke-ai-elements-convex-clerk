@@ -10,51 +10,29 @@ const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 // ✅ STEP 1: Verify Clerk Signature
 async function verifyClerkSignature(
   body: string,
-  signature: string
+  headersList: Awaited<ReturnType<typeof headers>>
 ): Promise<void> {
-  // Clerk webhook signing key from environment
-  const signingSecret = process.env.CLERK_WEBHOOK_SECRET;
-  if (!signingSecret) {
-    throw new Error("CLERK_WEBHOOK_SECRET not configured");
-  }
+  const { Webhook } = await import("svix");
+  const secret = process.env.CLERK_WEBHOOK_SECRET;
+  if (!secret) throw new Error("CLERK_WEBHOOK_SECRET not configured");
 
-  // Clerk uses a simple HMAC-SHA256 signature verification
-  // Format: timestamp.signature where signature is hex(hmac-sha256(body, secret))
-  const [timestamp, providedSignature] = signature.split(".");
-
-  if (!timestamp || !providedSignature) {
-    throw new Error("Invalid Clerk webhook signature format");
-  }
-
-  // Verify timestamp is within 5 minutes (prevent replay attacks)
-  const messageTimestamp = parseInt(timestamp, 10);
-  const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - messageTimestamp) > 300) {
-    throw new Error("Webhook timestamp too old (replay attack)");
-  }
-
-  // Create HMAC signature
-  const crypto = await import("crypto");
-  const signed = `${timestamp}.${body}`;
-  const expectedSignature = crypto
-    .createHmac("sha256", signingSecret)
-    .update(signed)
-    .digest("hex");
-
-  if (providedSignature !== expectedSignature) {
-    throw new Error("Clerk webhook signature verification failed");
-  }
+  const wh = new Webhook(secret);
+  wh.verify(body, {
+    "svix-id": headersList.get("svix-id")!,
+    "svix-timestamp": headersList.get("svix-timestamp")!,
+    "svix-signature": headersList.get("svix-signature")!
+  });
+  return;
 }
 
 // ✅ STEP 2: Route Handler
 export async function POST(request: Request) {
   const body = await request.text();
   const headersList = await headers();
-  const signature = headersList.get("svix-signature")!;
 
   try {
     // Verify Clerk signature
-    await verifyClerkSignature(body, signature);
+    await verifyClerkSignature(body, headersList);
     console.log(`✅ Verified Clerk webhook signature`);
 
     // Parse webhook event
@@ -110,9 +88,16 @@ async function handleUserSignUp(userData: any) {
   let claimed = 0;
   for (const email of emails) {
     try {
+      console.log(
+        `  [DEBUG] Querying pending subscription for email: ${email}`
+      );
       const pending = await convex.query(
         api.webhooks.getPendingSubscriptionByEmail,
         { email }
+      );
+      console.log(
+        `  [DEBUG] Pending subscription result for ${email}:`,
+        pending
       );
 
       if (pending) {
@@ -121,6 +106,9 @@ async function handleUserSignUp(userData: any) {
         );
 
         // Claim the pending subscription
+        console.log(
+          `  [DEBUG] Attempting to claim pending subscription for ${email}`
+        );
         const result = await convex.mutation(
           api.webhooks.claimPendingSubscriptionByEmail,
           {
@@ -128,11 +116,16 @@ async function handleUserSignUp(userData: any) {
             clerkUserId: clerkId
           }
         );
+        console.log(`  [DEBUG] Claim result for ${email}:`, result);
 
         if (result.success) {
           console.log(`  ✅ Claimed pending subscription for ${email}`);
           claimed++;
+        } else {
+          console.warn(`  ⚠️ Claim mutation failed for ${email}`);
         }
+      } else {
+        console.log(`  [DEBUG] No pending subscription found for ${email}`);
       }
     } catch (error) {
       console.warn(
