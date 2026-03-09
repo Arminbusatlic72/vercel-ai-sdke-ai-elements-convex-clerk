@@ -1,11 +1,15 @@
 import {
   streamText,
+  generateText,
   convertToModelMessages,
+  stepCountIs,
   type LanguageModel,
   type ToolSet
 } from "ai";
+import { z } from "zod/v4";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createGroq } from "@ai-sdk/groq";
 import { auth } from "@clerk/nextjs/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
@@ -31,8 +35,128 @@ const SUMMARY_TURN_THRESHOLD = 8;
 const SUMMARY_RECENT_WINDOW = 4;
 const SUMMARY_MAX_CACHE_AGE_MS = 10 * 60 * 1000;
 const IDEMPOTENCY_WINDOW_MS = 10_000;
+const PERPLEXITY_SEARCH_TIMEOUT_MS = 15_000;
+const IMAGE_GENERATION_TIMEOUT_MS = 30_000;
+const CLASSIFIER_TIMEOUT_MS = 3_000;
+const CLASSIFIER_MAX_OUTPUT_TOKENS = 120;
 const BEGIN_INTERNAL_PROMPT =
   "Start this conversation with one concise, friendly opening message and a brief note about how you can help.";
+
+const PERPLEXITY_RECENCY_SIGNALS =
+  /\b(latest|today|this\s+week|recent\s+news|current|right\s+now|just\s+happened|breaking)\b/i;
+const PERPLEXITY_EVIDENCE_SIGNALS =
+  /\b(sources|citations|scan\s+signals|evidence|cite|references|verify)\b/i;
+
+const IMAGE_GENERATION_SIGNALS =
+  /\b(generate\s+an?\s+image|create\s+a\s+visual|storyboard\s+this|visualize|make\s+an?\s+image|draw\s+an?\s+image|create\s+an?\s+image)\b/i;
+
+function shouldUsePerplexitySearch(text: string): boolean {
+  if (!text) return false;
+  const normalized = text.trim();
+  return (
+    PERPLEXITY_RECENCY_SIGNALS.test(normalized) ||
+    PERPLEXITY_EVIDENCE_SIGNALS.test(normalized)
+  );
+}
+
+function shouldUseImageGeneration(text: string): boolean {
+  if (!text) return false;
+  return IMAGE_GENERATION_SIGNALS.test(text.trim());
+}
+
+// ─── LLM Intent Classifier ───────────────────────────────────────────────────
+
+interface ClassifierResult {
+  tools: string[];
+  directResponse: string | null;
+  searchQuery: string | null;
+  imagePrompt: string | null;
+}
+
+const CLASSIFIER_SYSTEM_PROMPT = `Classify the user message. Return ONLY valid JSON, no markdown.
+
+{"tools":[],"directResponse":null,"searchQuery":null,"imagePrompt":null}
+
+tools (pick any from list, or empty):
+- perplexity_search → recency words: latest/today/this week/current/breaking, or asks for sources/citations
+- image_generation → explicit create/draw/generate/storyboard an image
+- web_search → live data: prices, scores, real-time facts
+- file_search → references uploaded file/document/PDF
+
+directResponse → short answer string if trivial greeting or simple math/fact, else null
+searchQuery → refined search string if perplexity_search active, else null
+imagePrompt → detailed DALL-E description if image_generation active, else null`;
+
+async function classifyUserIntent(
+  userText: string,
+  availableTools: string[],
+  model: LanguageModel
+): Promise<ClassifierResult | null> {
+  if (!userText.trim() || availableTools.length === 0) return null;
+
+  const prompt = `AVAILABLE TOOLS: ${availableTools.join(", ")}\n\nUSER MESSAGE: ${userText}`;
+
+  try {
+    const classifierPromise = generateText({
+      model,
+      system: CLASSIFIER_SYSTEM_PROMPT,
+      prompt,
+      maxOutputTokens: CLASSIFIER_MAX_OUTPUT_TOKENS,
+      providerOptions: {
+        openai: { response_format: { type: "json_object" } }
+      }
+    });
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("Classifier timeout")),
+        CLASSIFIER_TIMEOUT_MS
+      )
+    );
+
+    const { text } = await Promise.race([classifierPromise, timeoutPromise]);
+
+    console.log("[CLASSIFIER] I/O", {
+      model: "gpt-4o-mini",
+      prompt: prompt.slice(0, 200),
+      rawResponse: text.slice(0, 300)
+    });
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn(
+        "[CLASSIFIER] No JSON found in response:",
+        text.slice(0, 200)
+      );
+      return null;
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    return {
+      tools: Array.isArray(parsed.tools)
+        ? parsed.tools.filter((t: string) => availableTools.includes(t))
+        : [],
+      directResponse:
+        typeof parsed.directResponse === "string"
+          ? parsed.directResponse.trim() || null
+          : null,
+      searchQuery:
+        typeof parsed.searchQuery === "string"
+          ? parsed.searchQuery.trim() || null
+          : null,
+      imagePrompt:
+        typeof parsed.imagePrompt === "string"
+          ? parsed.imagePrompt.trim() || null
+          : null
+    };
+  } catch (error: any) {
+    console.warn("[CLASSIFIER] Failed, falling back to regex:", error?.message);
+    return null;
+  }
+}
+
+// ─── End Classifier ──────────────────────────────────────────────────────────
 
 let generalSettingsCache:
   | {
@@ -188,6 +312,8 @@ function buildMinimalSystemPrompt({
   gptId,
   hasWebSearch,
   hasFileSearch,
+  hasPerplexitySearch,
+  hasImageGeneration,
   isSimpleGreeting,
   hasToolsEnabled,
   conversationSummary
@@ -197,6 +323,8 @@ function buildMinimalSystemPrompt({
   gptId?: string;
   hasWebSearch: boolean;
   hasFileSearch: boolean;
+  hasPerplexitySearch: boolean;
+  hasImageGeneration: boolean;
   isSimpleGreeting: boolean;
   hasToolsEnabled: boolean;
   conversationSummary?: string;
@@ -222,6 +350,16 @@ function buildMinimalSystemPrompt({
   if (hasFileSearch) {
     systemPrompt +=
       "\nTool: file_search is available for uploaded documents when relevant.";
+  }
+
+  if (hasPerplexitySearch) {
+    systemPrompt +=
+      "\nTool: perplexity_search is available for live web signals, recent news, and sourced evidence. Use it when the user asks about current events or requests citations. After receiving results, synthesize them into a concise answer with inline source links.";
+  }
+
+  if (hasImageGeneration) {
+    systemPrompt +=
+      "\nTool: image_generation is available for creating visuals. Use only when the user explicitly requests image generation. After generating, always provide: the image, a 1-2 line caption, a brief methodology tie-back, and 2-3 next step options for the user.";
   }
 
   if (isSimpleGreeting) {
@@ -329,6 +467,8 @@ export async function POST(req: Request) {
       projectId,
       model: userSelectedModel,
       webSearch,
+      usePerplexity,
+      imageGeneration,
       provider,
       systemPrompt: userSystemPrompt
     } = await req.json();
@@ -338,6 +478,26 @@ export async function POST(req: Request) {
         JSON.stringify({ error: "messages must be a non-empty array" }),
         { status: 400 }
       );
+    }
+
+    if (messages.length > 100) {
+      return new Response(
+        JSON.stringify({ error: "Too many messages in request" }),
+        { status: 400 }
+      );
+    }
+
+    if (chatId && userId) {
+      const chat = await convex.query(api.chats.getChat, {
+        id: chatId,
+        userId
+      });
+      if (!chat) {
+        return new Response(
+          JSON.stringify({ error: "Chat not found or access denied" }),
+          { status: 403 }
+        );
+      }
     }
 
     // Resolve GPT config with one Convex call for GPT chats
@@ -403,28 +563,140 @@ export async function POST(req: Request) {
     ) as string[];
     const hasAnyRagVectorStore = ragVectorStoreIds.length > 0;
 
+    // ── LLM Classifier (augments regex triggers) ──────────────────────────
+    // Build available tools based on client flags
+    const classifierAvailableTools: string[] = [];
+    if (webSearch) classifierAvailableTools.push("web_search");
+    if (hasAnyRagVectorStore) classifierAvailableTools.push("file_search");
+    if (usePerplexity) classifierAvailableTools.push("perplexity_search");
+    if (imageGeneration) classifierAvailableTools.push("image_generation");
+
+    const shouldRunClassifier =
+      !isBeginTrigger &&
+      !isSimpleGreeting &&
+      !isLowComplexity &&
+      classifierAvailableTools.length > 0;
+
+    const classifierStartedAt = Date.now();
+
+    const groqApiKey = process.env.GROQ_API_KEY;
+    if (!groqApiKey) {
+      console.warn(
+        "[CLASSIFIER] GROQ_API_KEY not configured, skipping classifier"
+      );
+    }
+    const groqClient = groqApiKey ? createGroq({ apiKey: groqApiKey }) : null;
+    const classifierResult =
+      shouldRunClassifier && groqClient
+        ? await classifyUserIntent(
+            latestUserText,
+            classifierAvailableTools,
+            groqClient("llama-3.1-8b-instant")
+          )
+        : null;
+
+    if (classifierResult) {
+      console.log("[CLASSIFIER]", {
+        t_ms: Date.now() - classifierStartedAt,
+        tools: classifierResult.tools,
+        hasDirectResponse: !!classifierResult.directResponse,
+        searchQuery: classifierResult.searchQuery?.slice(0, 60) ?? null,
+        imagePrompt: classifierResult.imagePrompt?.slice(0, 60) ?? null
+      });
+    }
+
+    // ── Direct-response short-circuit ──────────────────────────────────────
+    // If the classifier can answer directly and no tools are needed,
+    // skip the main model call entirely.
+    if (
+      classifierResult?.directResponse &&
+      classifierResult.tools.length === 0 &&
+      !isBeginTrigger
+    ) {
+      const shortCircuitPrompt = `User asked: "${latestUserText}"\n\nAnswer: ${classifierResult.directResponse}`;
+      console.log("[SHORT-CIRCUIT] I/O", {
+        model: "gpt-4o-mini",
+        system: "Deliver the provided answer naturally and concisely...",
+        prompt: shortCircuitPrompt.slice(0, 200),
+        directResponse: classifierResult.directResponse?.slice(0, 200)
+      });
+
+      const directResult = streamText({
+        model: openaiClient("gpt-4o-mini"),
+        system:
+          "Deliver the provided answer naturally and concisely. Respond in Markdown when helpful. Do not add information beyond what is given.",
+        prompt: shortCircuitPrompt,
+        maxOutputTokens: 300
+      });
+
+      // Fire persistence in background (same pattern as main flow)
+      void (async () => {
+        try {
+          const resolvedChatId = chatId as any;
+          if (
+            resolvedChatId &&
+            latestUserText &&
+            latestUserText !== "__begin__"
+          ) {
+            await convex.mutation(api.messages.storeMessage, {
+              chatId: resolvedChatId,
+              content: latestUserText,
+              role: "user",
+              gptId
+            });
+          }
+        } catch (err) {
+          console.error("[SHORT-CIRCUIT POST TASKS FAILED]", err);
+        }
+      })();
+
+      return directResult.toUIMessageStreamResponse();
+    }
+
+    // ── Tool trigger resolution (classifier → regex fallback) ─────────────
     const useRAG =
       !isBeginTrigger &&
       hasAnyRagVectorStore &&
-      shouldUseRAG(latestUserText, ragTriggerKeywords);
-    const hasToolsEnabled = !!(webSearch || useRAG);
+      (shouldUseRAG(latestUserText, ragTriggerKeywords) ||
+        (classifierResult?.tools.includes("file_search") ?? false));
+
+    // Perplexity trigger: classifier is authoritative when available, regex is fallback
+    const perplexityTriggered = classifierResult
+      ? classifierResult.tools.includes("perplexity_search")
+      : !isBeginTrigger &&
+        !!usePerplexity &&
+        shouldUsePerplexitySearch(latestUserText);
+
+    // Image generation trigger: classifier is authoritative when available, regex is fallback
+    const imageGenTriggered = classifierResult
+      ? classifierResult.tools.includes("image_generation")
+      : !isBeginTrigger &&
+        !!imageGeneration &&
+        shouldUseImageGeneration(latestUserText);
+
+    const hasToolsEnabled = !!(
+      webSearch ||
+      useRAG ||
+      perplexityTriggered ||
+      imageGenTriggered
+    );
     const summaryText = getCachedConversationSummary(chatId, messages.length);
 
     // 5) Prepare required tools only (still pre-stream when feature-critical)
     let tools: ToolSet | undefined;
 
     if (webSearch && !isSimpleGreeting && !isLowComplexity) {
-      const webEnabledModels = ["gpt-4o", "gpt-4o-mini", "gpt-5-mini"];
-
-      if (!webEnabledModels.includes(resolvedModel.toLowerCase())) {
-        console.warn(
-          `[AI WARNING] Model "${resolvedModel}" may not support web_search`
+      // Note: tool turns always use gpt-4o-mini (hybrid policy), so web_search
+      // is always compatible regardless of admin-selected resolvedModel.
+      const webNativeModels = ["gpt-4o", "gpt-4o-mini", "gpt-5-mini"];
+      if (!webNativeModels.includes(resolvedModel.toLowerCase())) {
+        console.log(
+          `[WEB SEARCH] Admin model "${resolvedModel}" overridden to gpt-4o-mini for tool turn`
         );
-      } else {
-        tools = {
-          web_search: openaiClient.tools.webSearch({})
-        } as ToolSet;
       }
+      tools = {
+        web_search: openaiClient.tools.webSearch({})
+      } as ToolSet;
     }
 
     if (useRAG && !isSimpleGreeting && !isLowComplexity) {
@@ -437,6 +709,233 @@ export async function POST(req: Request) {
       } as ToolSet;
     }
 
+    // Perplexity structured web search tool
+    if (perplexityTriggered && !isSimpleGreeting && !isLowComplexity) {
+      const perplexityApiKey = process.env.PERPLEXITY_API_KEY;
+      if (!perplexityApiKey) {
+        console.warn("[PERPLEXITY] PERPLEXITY_API_KEY not configured");
+      } else {
+        tools = {
+          ...tools,
+          perplexity_search: {
+            description:
+              "Search the web for recent information using Perplexity. Use when the user asks about latest news, current events, or requests sources/citations/evidence. Returns structured results with headline, outlet, date, url, and snippet.",
+            inputSchema: z.object({
+              query: z
+                .string()
+                .describe("The search query to find recent information about")
+            }),
+            execute: async ({ query: searchQuery }: { query: string }) => {
+              console.log("[PERPLEXITY] Request", {
+                model: "sonar",
+                query: searchQuery.slice(0, 200)
+              });
+              try {
+                const controller = new AbortController();
+                const timeout = setTimeout(
+                  () => controller.abort(),
+                  PERPLEXITY_SEARCH_TIMEOUT_MS
+                );
+
+                const response = await fetch(
+                  "https://api.perplexity.ai/chat/completions",
+                  {
+                    method: "POST",
+                    headers: {
+                      Authorization: `Bearer ${perplexityApiKey}`,
+                      "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                      model: "sonar",
+                      messages: [
+                        {
+                          role: "system",
+                          content:
+                            "You are a research assistant. Return structured search results. For each result provide: headline, outlet (source name), date (ISO format if available), url, and snippet (1-2 lines). Return up to 5 results as a JSON array."
+                        },
+                        {
+                          role: "user",
+                          content: searchQuery
+                        }
+                      ],
+                      search_recency_filter: "month"
+                    }),
+                    signal: controller.signal
+                  }
+                );
+
+                clearTimeout(timeout);
+
+                if (!response.ok) {
+                  console.error(
+                    `[PERPLEXITY] API error: ${response.status} ${response.statusText}`
+                  );
+                  return {
+                    results: [],
+                    fallbackMessage:
+                      "Live web signals are temporarily unavailable. I will proceed with structured analysis based on current context. You may retry the scan."
+                  };
+                }
+
+                const data = await response.json();
+                const rawContent = data?.choices?.[0]?.message?.content || "";
+                const citations: string[] = data?.citations || [];
+
+                // Attempt to parse structured results from Perplexity response
+                let results: Array<{
+                  headline: string;
+                  outlet: string;
+                  date: string;
+                  url: string;
+                  snippet: string;
+                }> = [];
+
+                try {
+                  // Try parsing JSON from the response
+                  const jsonMatch = rawContent.match(/\[\s*\{[\s\S]*?\}\s*\]/);
+                  if (jsonMatch) {
+                    results = JSON.parse(jsonMatch[0]);
+                  }
+                } catch {
+                  // If JSON parsing fails, build results from citations
+                }
+
+                // If no structured results, build from citations + raw content
+                if (results.length === 0 && citations.length > 0) {
+                  results = citations.slice(0, 5).map((url, i) => ({
+                    headline: `Source ${i + 1}`,
+                    outlet: new URL(url).hostname.replace("www.", ""),
+                    date: "",
+                    url,
+                    snippet: ""
+                  }));
+                }
+
+                // Attach raw summary if we have it
+                const finalResults = results.slice(0, 5);
+                console.log("[PERPLEXITY] Response", {
+                  resultCount: finalResults.length,
+                  citationCount: citations.length,
+                  summaryPreview: rawContent.slice(0, 200)
+                });
+                return {
+                  results: finalResults,
+                  summary: rawContent,
+                  fallbackMessage: ""
+                };
+              } catch (error: any) {
+                console.error("[PERPLEXITY] Search failed:", error?.message);
+                return {
+                  results: [],
+                  fallbackMessage:
+                    "Live web signals are temporarily unavailable. I will proceed with structured analysis based on current context. You may retry the scan."
+                };
+              }
+            }
+          }
+        } as ToolSet;
+      }
+    }
+
+    // Image generation tool (DALL-E 3)
+    if (imageGenTriggered && !isSimpleGreeting && !isLowComplexity) {
+      tools = {
+        ...tools,
+        image_generation: {
+          description:
+            "Generate an image using DALL-E 3. Use only when the user explicitly asks to generate an image, create a visual, storyboard, or visualize something. Returns an image URL and the revised prompt used.",
+          inputSchema: z.object({
+            prompt: z
+              .string()
+              .describe("A detailed description of the image to generate")
+          }),
+          execute: async ({ prompt: imagePrompt }: { prompt: string }) => {
+            console.log("[IMAGE GEN] Request", {
+              model: "dall-e-3",
+              prompt: imagePrompt.slice(0, 200),
+              size: "1024x1024",
+              quality: "standard"
+            });
+            try {
+              const controller = new AbortController();
+              const timeout = setTimeout(
+                () => controller.abort(),
+                IMAGE_GENERATION_TIMEOUT_MS
+              );
+
+              const response = await fetch(
+                "https://api.openai.com/v1/images/generations",
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                    "Content-Type": "application/json"
+                  },
+                  body: JSON.stringify({
+                    model: "dall-e-3",
+                    prompt: imagePrompt,
+                    n: 1,
+                    size: "1024x1024",
+                    quality: "standard"
+                  }),
+                  signal: controller.signal
+                }
+              );
+
+              clearTimeout(timeout);
+
+              if (!response.ok) {
+                const errorBody = await response.text().catch(() => "");
+                console.error(
+                  `[IMAGE GEN] API error: ${response.status} ${response.statusText}`,
+                  errorBody
+                );
+
+                // Check for content policy violation
+                if (response.status === 400 && errorBody.includes("safety")) {
+                  return {
+                    imageUrl: "",
+                    revisedPrompt: "",
+                    fallbackMessage:
+                      "The image request was declined due to content policy. I can help you refine the prompt or provide a safe text-based alternative."
+                  };
+                }
+
+                return {
+                  imageUrl: "",
+                  revisedPrompt: "",
+                  fallbackMessage:
+                    "Image generation is temporarily unavailable. I can provide a detailed text-based storyboard or revised visual prompt."
+                };
+              }
+
+              const data = await response.json();
+              const imageData = data?.data?.[0];
+
+              console.log("[IMAGE GEN] Response", {
+                hasUrl: !!imageData?.url,
+                revisedPrompt: (imageData?.revised_prompt || "").slice(0, 200)
+              });
+
+              return {
+                imageUrl: imageData?.url || "",
+                revisedPrompt: imageData?.revised_prompt || imagePrompt,
+                fallbackMessage: ""
+              };
+            } catch (error: any) {
+              console.error("[IMAGE GEN] Generation failed:", error?.message);
+              return {
+                imageUrl: "",
+                revisedPrompt: "",
+                fallbackMessage:
+                  "Image generation is temporarily unavailable. I can provide a detailed text-based storyboard or revised visual prompt."
+              };
+            }
+          }
+        }
+      } as ToolSet;
+    }
+
     // 6) Build minimal system prompt (pre-stream only)
     const systemPrompt = buildMinimalSystemPrompt({
       userSystemPrompt,
@@ -444,6 +943,8 @@ export async function POST(req: Request) {
       gptId,
       hasWebSearch: !!webSearch,
       hasFileSearch: !!useRAG,
+      hasPerplexitySearch: perplexityTriggered,
+      hasImageGeneration: imageGenTriggered,
       isSimpleGreeting,
       hasToolsEnabled,
       conversationSummary: summaryText
@@ -554,12 +1055,31 @@ export async function POST(req: Request) {
       inputMessageCount: messages.length,
       hasTools: !!tools,
       hasToolsEnabled,
+      classifierUsed: !!classifierResult,
+      classifierTools: classifierResult?.tools ?? [],
+      perplexityTriggered,
+      imageGenTriggered,
       isSimpleGreeting,
       isLowComplexity,
       isComplexTurn,
       effectiveModel,
       resolvedModel,
       preservedAdminModel: effectiveModel === resolvedModel
+    });
+
+    console.log("[MAIN STREAM] I/O config", {
+      model: effectiveModel,
+      systemPromptPreview: systemPrompt.slice(0, 200),
+      userMessagePreview: latestUserText.slice(0, 200),
+      toolNames: tools ? Object.keys(tools) : [],
+      maxOutputTokens:
+        isSimpleGreeting || isLowComplexity
+          ? 120
+          : hasToolsEnabled
+            ? TOOL_TURN_MAX_OUTPUT_TOKENS
+            : isComplexTurn
+              ? COMPLEX_TURN_MAX_OUTPUT_TOKENS
+              : NORMAL_TURN_MAX_OUTPUT_TOKENS
     });
 
     // streaming starts here
@@ -575,6 +1095,7 @@ export async function POST(req: Request) {
       messages: modelMessages,
       system: systemPrompt,
       tools,
+      stopWhen: hasToolsEnabled ? stepCountIs(3) : stepCountIs(1),
       providerOptions:
         effectiveModel.toLowerCase().startsWith("gpt-5") && !tools
           ? {
@@ -604,7 +1125,18 @@ export async function POST(req: Request) {
         // ========================= POST-STREAM (non-blocking) =========================
         // This callback runs after generation and should never block first token.
         const finishReason = finishEvent?.finishReason;
+        const responseText = finishEvent?.text ?? "";
+        const usage = finishEvent?.usage;
         console.log(`[CHAT COMPLETE] Reason: ${finishReason}`);
+        console.log("[MAIN STREAM] Response", {
+          model: effectiveModel,
+          finishReason,
+          responsePreview: responseText.slice(0, 300),
+          responseLength: responseText.length,
+          promptTokens: usage?.promptTokens ?? null,
+          completionTokens: usage?.completionTokens ?? null,
+          totalTokens: usage?.totalTokens ?? null
+        });
         const finishedAt = Date.now();
         console.log("[PERF] finish", {
           t_finish_ms: finishedAt - requestStartedAt,
@@ -694,10 +1226,19 @@ export async function POST(req: Request) {
           latestUserText &&
           nonBeginUserMessageCount === 1 &&
           !isBeginTrigger
-            ? generateChatTitle(
-                latestUserText,
-                openaiClient("gpt-4o-mini")
-              ).catch(() => "")
+            ? generateChatTitle(latestUserText, openaiClient("gpt-4o-mini"))
+                .then((title) => {
+                  console.log("[TITLE GEN] I/O", {
+                    model: "gpt-4o-mini",
+                    inputPreview: latestUserText.slice(0, 120),
+                    generatedTitle: title
+                  });
+                  return title;
+                })
+                .catch((err) => {
+                  console.error("[TITLE GEN] Failed", err?.message);
+                  return "";
+                })
             : Promise.resolve("");
 
         const titlePersistenceTask = resolvedChatId
@@ -779,6 +1320,8 @@ export async function POST(req: Request) {
           chatId: !!resolvedChatId,
           persistedMessages: preStreamMessages.length,
           webSearch: !!webSearch,
+          usePerplexity: perplexityTriggered,
+          imageGeneration: imageGenTriggered,
           useRAG,
           summaryApplied: !!summaryText,
           ragMaxResults: useRAG ? RAG_MAX_RESULTS : 0

@@ -170,7 +170,9 @@ export function useAiChat({
               projectId,
               model,
               provider,
-              webSearch: false
+              webSearch: false,
+              usePerplexity: false,
+              imageGeneration: false
             },
             headers: {
               "x-idempotency-key": idempotencyKey
@@ -390,7 +392,9 @@ export function useAiChat({
               projectId,
               model,
               provider,
-              webSearch
+              webSearch,
+              usePerplexity: true,
+              imageGeneration: true
             },
             headers: {
               "x-idempotency-key": idempotencyKey
@@ -446,7 +450,16 @@ export function useAiChat({
         text: retryText
       },
       {
-        body: { chatId, gptId, projectId, model, provider, webSearch },
+        body: {
+          chatId,
+          gptId,
+          projectId,
+          model,
+          provider,
+          webSearch,
+          usePerplexity: true,
+          imageGeneration: true
+        },
         headers: {
           "x-idempotency-key": idempotencyKey
         }

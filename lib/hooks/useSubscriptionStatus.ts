@@ -49,9 +49,6 @@
 //   }, [health]);
 
 //   const refetch = () => {
-//     // Force re-fetch by updating a dependency
-//     // Convex automatically re-executes queries when dependencies change
-//     // This is typically handled by the Convex reactive system
 //     setIsLoading(true);
 //   };
 
@@ -157,6 +154,7 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useEffect, useState } from "react";
+import { isEntitled } from "@/convex/lib/subscriptionUtils";
 
 interface SubscriptionStatus {
   isActive: boolean;
@@ -220,13 +218,13 @@ export function useSubscriptionStatus(): UseSubscriptionStatusReturn {
     };
   }
 
-  // ✅ Normalize the health data to ensure all types match
+  // Use isEntitled for isActive
   return {
-    isActive: Boolean(health.isActive), // Ensure boolean
+    isActive: isEntitled(health),
     status: health.status || "no-subscription",
     daysUntilExpiration: health.daysUntilExpiration ?? null,
-    isInGracePeriod: Boolean(health.isInGracePeriod), // Ensure boolean
-    isTrialing: Boolean(health.isTrialing), // Ensure boolean
+    isInGracePeriod: Boolean(health.isInGracePeriod),
+    isTrialing: Boolean(health.isTrialing),
     messageKey: health.messageKey || "no_subscription",
     plan: health.plan,
     currentPeriodEnd: health.currentPeriodEnd,
