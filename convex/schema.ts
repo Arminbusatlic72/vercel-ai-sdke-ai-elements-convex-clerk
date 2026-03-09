@@ -93,7 +93,9 @@ export default defineSchema({
     .index("by_clerk_user_id", ["clerkUserId"])
     .index("by_status", ["status"])
     .index("by_stripe_subscription_id", ["stripeSubscriptionId"])
-    .index("by_user_status", ["userId", "status"]),
+    .index("by_user_status", ["userId", "status"])
+    .index("by_productId", ["productId"]) // Added for GPT sync
+    .index("by_priceId", ["priceId"]),
 
   projects: defineTable({
     name: v.string(),

@@ -143,7 +143,33 @@ export const upsertGpt = mutation({
         }
       }
     }
-
+    // After assigning GPT to package, sync gptIds in all subscriptions for this package
+    if (args.packageId) {
+      // Find all subscriptions with matching productId or priceId
+      const pkg = await ctx.db.get(args.packageId);
+      if (pkg) {
+        const subs = await ctx.db
+          .query("subscriptions")
+          .withIndex("by_productId", (q) =>
+            q.eq("productId", pkg.stripeProductId)
+          )
+          .collect();
+        const subsByPrice = await ctx.db
+          .query("subscriptions")
+          .withIndex("by_priceId", (q) => q.eq("priceId", pkg.stripePriceId))
+          .collect();
+        const allSubs = [...subs, ...subsByPrice];
+        // Get all GPTs for this package
+        const gpts = await ctx.db
+          .query("gpts")
+          .withIndex("by_packageId", (q) => q.eq("packageId", args.packageId))
+          .collect();
+        const gptIds = gpts.map((g) => g.gptId);
+        for (const sub of allSubs) {
+          await ctx.db.patch(sub._id, { gptIds });
+        }
+      }
+    }
     const existing = await ctx.db
       .query("gpts")
       .withIndex("by_gptId", (q) => q.eq("gptId", gptId))
