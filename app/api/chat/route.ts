@@ -117,7 +117,7 @@ async function classifyUserIntent(
     const { text } = await Promise.race([classifierPromise, timeoutPromise]);
 
     console.log("[CLASSIFIER] I/O", {
-      model: "gpt-4o-mini",
+      model: "llama-3.1-8b-instant",
       prompt: prompt.slice(0, 200),
       rawResponse: text.slice(0, 300)
     });
