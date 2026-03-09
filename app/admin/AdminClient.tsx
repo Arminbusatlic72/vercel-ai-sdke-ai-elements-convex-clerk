@@ -28,6 +28,10 @@ const sanitizeGptId = (value: string) => {
 };
 
 export default function AdminClient() {
+  // Go Back Button handler
+  const handleGoBack = () => {
+    window.location.href = "/dashboard";
+  };
   const convex = useConvex();
 
   // Data fetching
@@ -457,6 +461,16 @@ export default function AdminClient() {
 
   return (
     <div className="min-h-screen bg-linear-to-br from-gray-50 to-gray-100 p-4 md:p-6">
+      {/* Go Back to Dashboard Button */}
+      <div className="mb-6 flex justify-start">
+        <button
+          type="button"
+          className="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition"
+          onClick={handleGoBack}
+        >
+          ← Back to Dashboard
+        </button>
+      </div>
       <div className="max-w-7xl mx-auto">
         <Header gptCount={gpts.length} />
 
