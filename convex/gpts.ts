@@ -176,11 +176,9 @@ export const upsertGpt = mutation({
       .unique();
 
     if (existing) {
-      await ctx.db.replace(existing._id, {
-        gptId,
+      await ctx.db.patch(existing._id, {
         packageId,
         ...fields,
-        createdAt: existing.createdAt,
         updatedAt: Date.now()
       });
       return existing._id;
