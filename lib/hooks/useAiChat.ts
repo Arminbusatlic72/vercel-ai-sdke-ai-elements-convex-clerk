@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { extractMessageText } from "@/lib/message";
 import { preprocessCodeInput } from "@/lib/code-detector";
+import { UsageSummary } from "@/types/usage";
 
 const BEGIN_INTERNAL_PROMPT =
   "Start this conversation with one concise, friendly opening message and a brief note about how you can help.";
@@ -28,7 +29,13 @@ export interface UseAiChatProps {
   }>;
   models: readonly ModelConfig[];
   defaultModel?: string;
+  onUsageSummary?: (summary: UsageSummary) => void;
 }
+
+type LimitErrorPayload = {
+  systemMessage?: string;
+  usageSnapshot?: UsageSummary;
+};
 
 export function useAiChat({
   gptId,
@@ -36,7 +43,8 @@ export function useAiChat({
   projectId,
   initialMessages = [],
   models,
-  defaultModel
+  defaultModel,
+  onUsageSummary
 }: UseAiChatProps) {
   // --- States ---
   const [input, setInput] = useState("");
@@ -78,6 +86,39 @@ export function useAiChat({
 
   // --- AI Chat Hook ---
   const { messages, sendMessage, status, setMessages } = useChat();
+
+  const appendSystemMessage = useCallback(
+    (text: string) => {
+      setMessages((previous) => [
+        ...previous,
+        {
+          id: `limit-${Date.now()}`,
+          role: "assistant",
+          parts: [{ type: "text", text }]
+        }
+      ]);
+    },
+    [setMessages]
+  );
+
+  const handleLimitResponse = useCallback(
+    async (error: unknown) => {
+      if (!(error instanceof Response)) return;
+      if (error.status !== 429) return;
+      try {
+        const payload = (await error.json()) as LimitErrorPayload;
+        if (payload?.usageSnapshot) {
+          onUsageSummary?.(payload.usageSnapshot);
+        }
+        if (payload?.systemMessage) {
+          appendSystemMessage(payload.systemMessage);
+        }
+      } catch (err) {
+        console.error("[USAGE LIMIT PARSE ERROR]", err);
+      }
+    },
+    [appendSystemMessage, onUsageSummary]
+  );
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -408,6 +449,7 @@ export function useAiChat({
         if ((error as any)?.name === "AbortError") {
           return;
         }
+        await handleLimitResponse(error);
         console.error("[CHAT SUBMIT ERROR]", error);
       } finally {
         submittingRef.current = false;

@@ -148,6 +148,21 @@ export default defineSchema({
     .index("by_chat", ["chatId"])
     // .index("by_user", ["userId"])
     .index("by_project", ["projectId"]),
+
+  aiUsage: defineTable({
+    userId: v.string(),
+    windowType: v.union(
+      v.literal("minute"),
+      v.literal("hour"),
+      v.literal("monthly")
+    ),
+    windowStart: v.number(),
+    requestCount: v.number(),
+    messageCount: v.number(),
+    imageCount: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number()
+  }).index("by_user_window", ["userId", "windowType", "windowStart"]),
   gpts: defineTable({
     gptId: v.string(),
     name: v.optional(v.string()),

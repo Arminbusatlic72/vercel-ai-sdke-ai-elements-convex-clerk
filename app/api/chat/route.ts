@@ -16,9 +16,19 @@ import { api } from "@/convex/_generated/api";
 import { shouldUseRAG } from "@/lib/ai-optimization";
 import { generateChatTitle } from "@/lib/chat-title";
 import { buildDeterministicConversationSummary } from "@/lib/conversation-summary";
+import {
+  BEGIN_INTERNAL_PROMPT,
+  MONTHLY_IMAGE_LIMIT,
+  MONTHLY_MESSAGE_LIMIT,
+  REQUESTS_PER_HOUR_LIMIT,
+  REQUESTS_PER_MINUTE_LIMIT,
+  countNewUserMessages,
+  extractMessageText,
+  getUsageWindowStarts
+} from "@/app/api/chat/usage-guard";
 
 export const runtime = "nodejs";
-export const maxDuration = 60; // ✅ Increase for file processing
+export const maxDuration = 60;
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
@@ -26,27 +36,30 @@ const google = createGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY!
 });
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+
 const SETTINGS_CACHE_TTL_MS = 30_000;
 const RAG_MAX_RESULTS = 4;
-const TOOL_TURN_MAX_OUTPUT_TOKENS = 900;
-const COMPLEX_TURN_MAX_OUTPUT_TOKENS = 1000;
-const NORMAL_TURN_MAX_OUTPUT_TOKENS = 1200;
+
+// Raised from 900 / 1000 / 1200 — previous limits were too tight for
+// well-structured markdown responses with code blocks.
+const TOOL_TURN_MAX_OUTPUT_TOKENS = 1_500;
+const COMPLEX_TURN_MAX_OUTPUT_TOKENS = 2_500;
+const NORMAL_TURN_MAX_OUTPUT_TOKENS = 2_000;
+
 const SUMMARY_TURN_THRESHOLD = 8;
 const SUMMARY_RECENT_WINDOW = 4;
-const SUMMARY_MAX_CACHE_AGE_MS = 10 * 60 * 1000;
+const SUMMARY_MAX_CACHE_AGE_MS = 10 * 60 * 1_000;
 const IDEMPOTENCY_WINDOW_MS = 10_000;
 const PERPLEXITY_SEARCH_TIMEOUT_MS = 15_000;
 const IMAGE_GENERATION_TIMEOUT_MS = 30_000;
 const CLASSIFIER_TIMEOUT_MS = 3_000;
 const CLASSIFIER_MAX_OUTPUT_TOKENS = 120;
-const BEGIN_INTERNAL_PROMPT =
-  "Start this conversation with one concise, friendly opening message and a brief note about how you can help.";
 
 const PERPLEXITY_RECENCY_SIGNALS =
   /\b(latest|today|this\s+week|recent\s+news|current|right\s+now|just\s+happened|breaking)\b/i;
 const PERPLEXITY_EVIDENCE_SIGNALS =
   /\b(sources|citations|scan\s+signals|evidence|cite|references|verify)\b/i;
-
 const IMAGE_GENERATION_SIGNALS =
   /\b(generate\s+an?\s+image|create\s+a\s+visual|storyboard\s+this|visualize|make\s+an?\s+image|draw\s+an?\s+image|create\s+an?\s+image)\b/i;
 
@@ -156,55 +169,42 @@ async function classifyUserIntent(
   }
 }
 
-// ─── End Classifier ──────────────────────────────────────────────────────────
+// ─── In-memory caches ────────────────────────────────────────────────────────
+// NOTE: These caches are instance-local and will not persist across cold starts
+// on serverless platforms (Vercel). For reliable caching, migrate to a shared
+// store such as Upstash Redis. The idempotency store below has the same
+// limitation — duplicate requests can slip through on different instances.
 
-let generalSettingsCache:
-  | {
-      value: any;
-      expiresAt: number;
-    }
-  | undefined;
+let generalSettingsCache: { value: any; expiresAt: number } | undefined;
 
 const gptWithDefaultsCache = new Map<
   string,
-  {
-    value: any;
-    expiresAt: number;
-  }
+  { value: any; expiresAt: number }
 >();
 
 const conversationSummaryCache = new Map<
   string,
-  {
-    summary: string;
-    updatedAt: number;
-    basedOnCount: number;
-  }
+  { summary: string; updatedAt: number; basedOnCount: number }
 >();
 
 const requestIdempotencyStore = new Map<string, { expiresAt: number }>();
+
+// ─── Cache helpers ────────────────────────────────────────────────────────────
 
 async function getCachedGeneralSettings() {
   const now = Date.now();
   if (generalSettingsCache && generalSettingsCache.expiresAt > now) {
     return generalSettingsCache.value;
   }
-
   const value = await convex.query(api.gpts.getGeneralSettings, {});
-  generalSettingsCache = {
-    value,
-    expiresAt: now + SETTINGS_CACHE_TTL_MS
-  };
+  generalSettingsCache = { value, expiresAt: now + SETTINGS_CACHE_TTL_MS };
   return value;
 }
 
 async function getCachedGptWithDefaults(gptId: string) {
   const now = Date.now();
   const cached = gptWithDefaultsCache.get(gptId);
-  if (cached && cached.expiresAt > now) {
-    return cached.value;
-  }
-
+  if (cached && cached.expiresAt > now) return cached.value;
   const value = await convex.query(api.gpts.getGptWithDefaults, { gptId });
   gptWithDefaultsCache.set(gptId, {
     value,
@@ -213,32 +213,45 @@ async function getCachedGptWithDefaults(gptId: string) {
   return value;
 }
 
+function getCachedConversationSummary(chatId?: string, messageCount?: number) {
+  if (!chatId) return "";
+  const item = conversationSummaryCache.get(chatId);
+  if (!item) return "";
+  if (Date.now() - item.updatedAt > SUMMARY_MAX_CACHE_AGE_MS) {
+    conversationSummaryCache.delete(chatId);
+    return "";
+  }
+  if (typeof messageCount === "number" && messageCount < item.basedOnCount) {
+    conversationSummaryCache.delete(chatId);
+    return "";
+  }
+  return item.summary;
+}
+
+function cleanExpiredIdempotencyKeys() {
+  const now = Date.now();
+  for (const [key, value] of requestIdempotencyStore.entries()) {
+    if (value.expiresAt <= now) requestIdempotencyStore.delete(key);
+  }
+}
+
+// ─── Message helpers ──────────────────────────────────────────────────────────
+
 function findLatestUserMessage(messages: any[]) {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    if (messages[index]?.role === "user") {
-      return messages[index];
-    }
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === "user") return messages[i];
   }
   return undefined;
 }
 
 function getRecentMessagesWindow(messages: any[], maxMessages = 10) {
-  if (!Array.isArray(messages) || messages.length <= maxMessages) {
+  if (!Array.isArray(messages) || messages.length <= maxMessages)
     return messages;
-  }
-
   const recent = messages.slice(-maxMessages);
-  const hasUserMessage = recent.some((message) => message?.role === "user");
-  if (hasUserMessage) {
-    return recent;
-  }
-
-  const latestUserMessage = findLatestUserMessage(messages);
-  if (!latestUserMessage) {
-    return recent;
-  }
-
-  return [...recent.slice(1), latestUserMessage];
+  if (recent.some((m) => m?.role === "user")) return recent;
+  const latestUser = findLatestUserMessage(messages);
+  if (!latestUser) return recent;
+  return [...recent.slice(1), latestUser];
 }
 
 function getMinimalRollingWindow(messages: any[]) {
@@ -249,62 +262,45 @@ function normalizeMessagesForModel(messages: any[]) {
   return messages
     .map((message) => {
       const role = message?.role;
-      if (role !== "user" && role !== "assistant" && role !== "system") {
+      if (role !== "user" && role !== "assistant" && role !== "system")
         return null;
-      }
-
       if (Array.isArray(message?.parts) && message.parts.length > 0) {
-        return {
-          role,
-          parts: message.parts
-        };
+        return { role, parts: message.parts };
       }
-
       if (Array.isArray(message?.content) && message.content.length > 0) {
-        return {
-          role,
-          content: message.content
-        };
+        return { role, content: message.content };
       }
-
       const content =
         typeof message?.content === "string"
           ? message.content
           : extractMessageText(message);
-
       if (!content?.trim()) return null;
-
-      return {
-        role,
-        content
-      };
+      return { role, content };
     })
     .filter(Boolean) as Array<any>;
 }
 
-function extractMessageText(message: any): string {
-  if (!message) return "";
-
-  if (typeof message.content === "string") {
-    return message.content;
-  }
-
-  if (Array.isArray(message.content)) {
-    return message.content
-      .filter((part: any) => part.type === "text")
-      .map((part: any) => part.text)
-      .join(" ");
-  }
-
-  if (Array.isArray(message.parts)) {
-    return message.parts
-      .filter((part: any) => part.type === "text")
-      .map((part: any) => part.text)
-      .join(" ");
-  }
-
-  return "";
+function isSimpleGreetingMessage(text: string) {
+  const n = text.trim().toLowerCase();
+  if (!n) return false;
+  return /^(hi|hello|hey|yo|hola|good\s+morning|good\s+afternoon|good\s+evening)[!.?\s]*$/.test(
+    n
+  );
 }
+
+function isLowComplexityMessage(text: string) {
+  const n = text.trim().toLowerCase();
+  if (!n) return false;
+  const wordCount = n.split(/\s+/).filter(Boolean).length;
+  const isSimpleMath =
+    /^(what\s+is\s+)?\d+\s*[+\-*/]\s*\d+\??$/.test(n) ||
+    /^(\d+\s*[+\-*/]\s*\d+)$/.test(n);
+  const isShortDefinition =
+    /^(what\s+is\s+\w+\??|define\s+\w+\??|who\s+is\s+\w+\??)$/.test(n);
+  return isSimpleMath || (wordCount <= 8 && isShortDefinition);
+}
+
+// ─── System prompt builder ────────────────────────────────────────────────────
 
 function buildMinimalSystemPrompt({
   userSystemPrompt,
@@ -329,108 +325,33 @@ function buildMinimalSystemPrompt({
   hasToolsEnabled: boolean;
   conversationSummary?: string;
 }) {
-  let systemPrompt = "";
-
-  if (userSystemPrompt) {
-    systemPrompt += `${userSystemPrompt}\n\n`;
-  }
-
-  if (gptId) {
-    systemPrompt += `[ACTIVE GPT: ${gptId}]\n`;
-  }
-
-  systemPrompt += `${basePrompt}\n\n`;
-  systemPrompt +=
+  let prompt = "";
+  if (userSystemPrompt) prompt += `${userSystemPrompt}\n\n`;
+  if (gptId) prompt += `[ACTIVE GPT: ${gptId}]\n`;
+  prompt += `${basePrompt}\n\n`;
+  prompt +=
     "Formatting: respond in Markdown. Use fenced code blocks with language tags when returning code.";
-
-  if (hasWebSearch) {
-    systemPrompt += "\nTool: web_search is available when needed.";
-  }
-
-  if (hasFileSearch) {
-    systemPrompt +=
+  if (hasWebSearch) prompt += "\nTool: web_search is available when needed.";
+  if (hasFileSearch)
+    prompt +=
       "\nTool: file_search is available for uploaded documents when relevant.";
-  }
-
-  if (hasPerplexitySearch) {
-    systemPrompt +=
+  if (hasPerplexitySearch)
+    prompt +=
       "\nTool: perplexity_search is available for live web signals, recent news, and sourced evidence. Use it when the user asks about current events or requests citations. After receiving results, synthesize them into a concise answer with inline source links.";
-  }
-
-  if (hasImageGeneration) {
-    systemPrompt +=
+  if (hasImageGeneration)
+    prompt +=
       "\nTool: image_generation is available for creating visuals. Use only when the user explicitly requests image generation. After generating, always provide: the image, a 1-2 line caption, a brief methodology tie-back, and 2-3 next step options for the user.";
-  }
-
-  if (isSimpleGreeting) {
-    systemPrompt +=
+  if (isSimpleGreeting)
+    prompt +=
       "\nLatency mode: for simple greetings, respond immediately with one short friendly sentence and do not use tools.";
-  }
-
-  if (hasToolsEnabled) {
-    systemPrompt +=
+  if (hasToolsEnabled)
+    prompt +=
       "\nPerformance mode: provide a concise direct answer first, then brief supporting points. After any tool usage, always return a final user-facing text answer.";
-  }
-
-  if (conversationSummary) {
-    systemPrompt += `\n\n${conversationSummary}`;
-  }
-
-  return systemPrompt;
+  if (conversationSummary) prompt += `\n\n${conversationSummary}`;
+  return prompt;
 }
 
-function getCachedConversationSummary(chatId?: string, messageCount?: number) {
-  if (!chatId) return "";
-  const item = conversationSummaryCache.get(chatId);
-  if (!item) return "";
-
-  if (Date.now() - item.updatedAt > SUMMARY_MAX_CACHE_AGE_MS) {
-    conversationSummaryCache.delete(chatId);
-    return "";
-  }
-
-  if (typeof messageCount === "number" && messageCount < item.basedOnCount) {
-    conversationSummaryCache.delete(chatId);
-    return "";
-  }
-
-  return item.summary;
-}
-
-function cleanExpiredIdempotencyKeys() {
-  const now = Date.now();
-  for (const [key, value] of requestIdempotencyStore.entries()) {
-    if (value.expiresAt <= now) {
-      requestIdempotencyStore.delete(key);
-    }
-  }
-}
-
-function isSimpleGreetingMessage(text: string) {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-
-  return /^(hi|hello|hey|yo|hola|good\s+morning|good\s+afternoon|good\s+evening)[!.?\s]*$/.test(
-    normalized
-  );
-}
-
-function isLowComplexityMessage(text: string) {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-
-  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
-  const isVeryShort = wordCount <= 8;
-
-  const isSimpleMath =
-    /^(what\s+is\s+)?\d+\s*[+\-*/]\s*\d+\??$/.test(normalized) ||
-    /^(\d+\s*[+\-*/]\s*\d+)$/.test(normalized);
-
-  const isShortDefinition =
-    /^(what\s+is\s+\w+\??|define\s+\w+\??|who\s+is\s+\w+\??)$/.test(normalized);
-
-  return isSimpleMath || (isVeryShort && isShortDefinition);
-}
+// ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
   try {
@@ -441,6 +362,14 @@ export async function POST(req: Request) {
       (await getToken()) ??
       undefined;
 
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ error: "Authentication required" }),
+        { status: 401, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // ── Idempotency check ──────────────────────────────────────────────────
     const idempotencyKey = req.headers.get("x-idempotency-key");
     if (idempotencyKey) {
       cleanExpiredIdempotencyKeys();
@@ -450,16 +379,12 @@ export async function POST(req: Request) {
           headers: { "Content-Type": "application/json" }
         });
       }
-
       requestIdempotencyStore.set(idempotencyKey, {
         expiresAt: requestStartedAt + IDEMPOTENCY_WINDOW_MS
       });
     }
 
-    // pre-stream tasks
-    // Keep this section minimal so first-token latency is as low as possible.
-
-    // 1) Parse request payload
+    // ── 1. Parse request body ──────────────────────────────────────────────
     const {
       messages,
       chatId,
@@ -479,7 +404,6 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-
     if (messages.length > 100) {
       return new Response(
         JSON.stringify({ error: "Too many messages in request" }),
@@ -487,98 +411,17 @@ export async function POST(req: Request) {
       );
     }
 
-    if (chatId && userId) {
-      const chat = await convex.query(api.chats.getChat, {
-        id: chatId,
-        userId
-      });
-      if (!chat) {
-        return new Response(
-          JSON.stringify({ error: "Chat not found or access denied" }),
-          { status: 403 }
-        );
-      }
-    }
-
-    // Resolve GPT config with one Convex call for GPT chats
-    let resolvedModel: string = "gpt-4o-mini";
-    let apiKey: string | undefined;
-    let gptVectorStoreId: string | undefined;
-    let projectVectorStoreId: string | undefined;
-    let ragTriggerKeywords: string[] | undefined;
-    let baseSystemPrompt = "You are a helpful assistant.";
-
-    if (gptId) {
-      const gptWithDefaults = await getCachedGptWithDefaults(gptId);
-
-      if (gptWithDefaults) {
-        baseSystemPrompt =
-          gptWithDefaults.combinedSystemPrompt || baseSystemPrompt;
-        apiKey = gptWithDefaults.effectiveApiKey;
-        gptVectorStoreId = gptWithDefaults.vectorStoreId;
-        ragTriggerKeywords = gptWithDefaults.ragTriggerKeywords;
-        resolvedModel =
-          userSelectedModel ?? gptWithDefaults.model ?? resolvedModel;
-      }
-    } else {
-      const generalSettings = await getCachedGeneralSettings();
-      baseSystemPrompt =
-        generalSettings?.defaultSystemPrompt || "You are a helpful assistant.";
-      apiKey = generalSettings?.defaultApiKey;
-      resolvedModel = userSelectedModel ?? resolvedModel;
-    }
-
-    if (projectId) {
-      const project = await convex.query(api.project.getProject, {
-        id: projectId
-      });
-      projectVectorStoreId = project?.vectorStoreId;
-    }
-
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({
-          error: "No API key configured"
-        }),
-        { status: 400 }
-      );
-    }
-
-    // 3) Build model client
-    const openaiClient = createOpenAI({
-      apiKey: apiKey
-    });
-
-    // Keep only a tiny rolling window pre-stream (do not serialize full history)
-    const trimmedMessages = getMinimalRollingWindow(messages);
-    const normalizedMessages = normalizeMessagesForModel(trimmedMessages);
+    // ── 2. Extract message context (sync — no I/O needed) ──────────────────
     const latestUserMessage = findLatestUserMessage(messages);
     const latestUserText = extractMessageText(latestUserMessage);
     const isBeginTrigger = latestUserText.trim() === "__begin__";
     const isSimpleGreeting = isSimpleGreetingMessage(latestUserText);
     const isLowComplexity = isLowComplexityMessage(latestUserText);
 
-    const ragVectorStoreIds = [gptVectorStoreId, projectVectorStoreId].filter(
-      Boolean
-    ) as string[];
-    const hasAnyRagVectorStore = ragVectorStoreIds.length > 0;
-
-    // ── LLM Classifier (augments regex triggers) ──────────────────────────
-    // Build available tools based on client flags
-    const classifierAvailableTools: string[] = [];
-    if (webSearch) classifierAvailableTools.push("web_search");
-    if (hasAnyRagVectorStore) classifierAvailableTools.push("file_search");
-    if (usePerplexity) classifierAvailableTools.push("perplexity_search");
-    if (imageGeneration) classifierAvailableTools.push("image_generation");
-
-    const shouldRunClassifier =
-      !isBeginTrigger &&
-      !isSimpleGreeting &&
-      !isLowComplexity &&
-      classifierAvailableTools.length > 0;
-
-    const classifierStartedAt = Date.now();
-
+    // ── 3. Fire classifier early (runs in parallel with Convex queries) ────
+    // Note: file_search is excluded here because vectorStoreIds aren't resolved
+    // yet. The RAG/regex fallback handles file_search independently, so this
+    // is a safe omission — classifier still handles the other three tools.
     const groqApiKey = process.env.GROQ_API_KEY;
     if (!groqApiKey) {
       console.warn(
@@ -586,14 +429,101 @@ export async function POST(req: Request) {
       );
     }
     const groqClient = groqApiKey ? createGroq({ apiKey: groqApiKey }) : null;
-    const classifierResult =
+
+    const earlyClassifierTools: string[] = [];
+    if (webSearch) earlyClassifierTools.push("web_search");
+    if (usePerplexity) earlyClassifierTools.push("perplexity_search");
+    if (imageGeneration) earlyClassifierTools.push("image_generation");
+
+    const shouldRunClassifier =
+      !isBeginTrigger &&
+      !isSimpleGreeting &&
+      !isLowComplexity &&
+      earlyClassifierTools.length > 0;
+
+    const classifierStartedAt = Date.now();
+
+    // Deliberately not awaited yet — runs in parallel with Convex queries below
+    const classifierPromise: Promise<ClassifierResult | null> =
       shouldRunClassifier && groqClient
-        ? await classifyUserIntent(
+        ? classifyUserIntent(
             latestUserText,
-            classifierAvailableTools,
+            earlyClassifierTools,
             groqClient("llama-3.1-8b-instant")
           )
-        : null;
+        : Promise.resolve(null);
+
+    // ── 4. Fire all independent Convex queries in parallel ─────────────────
+    // Previously these ran sequentially (up to 4 round-trips before streaming).
+    // Now they all race together; the slowest one determines the wait time.
+    const [chatResult, gptConfigResult, generalConfigResult, projectResult] =
+      await Promise.all([
+        chatId && userId
+          ? convex.query(api.chats.getChat, { id: chatId, userId })
+          : Promise.resolve(null),
+        gptId ? getCachedGptWithDefaults(gptId) : Promise.resolve(null),
+        !gptId ? getCachedGeneralSettings() : Promise.resolve(null),
+        projectId
+          ? convex.query(api.project.getProject, { id: projectId })
+          : Promise.resolve(null)
+      ]);
+
+    // ── 5. Auth check ──────────────────────────────────────────────────────
+    if (chatId && userId && !chatResult) {
+      return new Response(
+        JSON.stringify({ error: "Chat not found or access denied" }),
+        { status: 403 }
+      );
+    }
+
+    // ── 6. Resolve config from parallel query results ──────────────────────
+    let resolvedModel = "gpt-4o-mini";
+    let apiKey: string | undefined;
+    let gptVectorStoreId: string | undefined;
+    let projectVectorStoreId: string | undefined;
+    let ragTriggerKeywords: string[] | undefined;
+    let baseSystemPrompt = "You are a helpful assistant.";
+
+    if (gptId && gptConfigResult) {
+      baseSystemPrompt =
+        gptConfigResult.combinedSystemPrompt || baseSystemPrompt;
+      apiKey = gptConfigResult.effectiveApiKey;
+      gptVectorStoreId = gptConfigResult.vectorStoreId;
+      ragTriggerKeywords = gptConfigResult.ragTriggerKeywords;
+      resolvedModel =
+        userSelectedModel ?? gptConfigResult.model ?? resolvedModel;
+    } else if (generalConfigResult) {
+      baseSystemPrompt =
+        generalConfigResult.defaultSystemPrompt ||
+        "You are a helpful assistant.";
+      apiKey = generalConfigResult.defaultApiKey;
+      resolvedModel = userSelectedModel ?? resolvedModel;
+    }
+
+    if (projectResult) {
+      projectVectorStoreId = projectResult.vectorStoreId;
+    }
+
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: "No API key configured" }), {
+        status: 400
+      });
+    }
+
+    // ── 7. Build model client ──────────────────────────────────────────────
+    const openaiClient = createOpenAI({ apiKey });
+
+    // ── 8. Prepare messages (sync) ─────────────────────────────────────────
+    const trimmedMessages = getMinimalRollingWindow(messages);
+    const normalizedMessages = normalizeMessagesForModel(trimmedMessages);
+
+    const ragVectorStoreIds = [gptVectorStoreId, projectVectorStoreId].filter(
+      Boolean
+    ) as string[];
+    const hasAnyRagVectorStore = ragVectorStoreIds.length > 0;
+
+    // ── 9. Await classifier (likely already resolved) ──────────────────────
+    const classifierResult = await classifierPromise;
 
     if (classifierResult) {
       console.log("[CLASSIFIER]", {
@@ -605,18 +535,16 @@ export async function POST(req: Request) {
       });
     }
 
-    // ── Direct-response short-circuit ──────────────────────────────────────
-    // If the classifier can answer directly and no tools are needed,
-    // skip the main model call entirely.
+    // ── 10. Direct-response short-circuit ──────────────────────────────────
     if (
       classifierResult?.directResponse &&
       classifierResult.tools.length === 0 &&
       !isBeginTrigger
     ) {
       const shortCircuitPrompt = `User asked: "${latestUserText}"\n\nAnswer: ${classifierResult.directResponse}`;
+
       console.log("[SHORT-CIRCUIT] I/O", {
         model: "gpt-4o-mini",
-        system: "Deliver the provided answer naturally and concisely...",
         prompt: shortCircuitPrompt.slice(0, 200),
         directResponse: classifierResult.directResponse?.slice(0, 200)
       });
@@ -629,7 +557,6 @@ export async function POST(req: Request) {
         maxOutputTokens: 300
       });
 
-      // Fire persistence in background (same pattern as main flow)
       void (async () => {
         try {
           const resolvedChatId = chatId as any;
@@ -653,21 +580,19 @@ export async function POST(req: Request) {
       return directResult.toUIMessageStreamResponse();
     }
 
-    // ── Tool trigger resolution (classifier → regex fallback) ─────────────
+    // ── 11. Resolve tool triggers (classifier → regex fallback) ─────────────
     const useRAG =
       !isBeginTrigger &&
       hasAnyRagVectorStore &&
       (shouldUseRAG(latestUserText, ragTriggerKeywords) ||
         (classifierResult?.tools.includes("file_search") ?? false));
 
-    // Perplexity trigger: classifier is authoritative when available, regex is fallback
     const perplexityTriggered = classifierResult
       ? classifierResult.tools.includes("perplexity_search")
       : !isBeginTrigger &&
         !!usePerplexity &&
         shouldUsePerplexitySearch(latestUserText);
 
-    // Image generation trigger: classifier is authoritative when available, regex is fallback
     const imageGenTriggered = classifierResult
       ? classifierResult.tools.includes("image_generation")
       : !isBeginTrigger &&
@@ -682,21 +607,68 @@ export async function POST(req: Request) {
     );
     const summaryText = getCachedConversationSummary(chatId, messages.length);
 
-    // 5) Prepare required tools only (still pre-stream when feature-critical)
+    const { minuteWindowStart, hourWindowStart, monthlyWindowStart } =
+      getUsageWindowStarts();
+    const requestedMessageCount = countNewUserMessages(messages);
+    const requestedImageCount = imageGenTriggered ? 1 : 0;
+
+    const usageResult = await convex.mutation(api.aiUsage.claimUsage, {
+      userId,
+      minuteWindow: minuteWindowStart,
+      hourWindow: hourWindowStart,
+      monthlyWindow: monthlyWindowStart,
+      requestedMessageCount,
+      requestedImageCount,
+      requestedRequestCount: 1,
+      limits: {
+        requestsPerMinute: REQUESTS_PER_MINUTE_LIMIT,
+        requestsPerHour: REQUESTS_PER_HOUR_LIMIT,
+        monthlyMessages: MONTHLY_MESSAGE_LIMIT,
+        monthlyImages: MONTHLY_IMAGE_LIMIT
+      }
+    });
+
+    if (usageResult.status === "limit_reached") {
+      const limitNames: Record<string, string> = {
+        requestsPerMinute: "requests per minute",
+        requestsPerHour: "requests per hour",
+        monthlyMessages: "monthly messages",
+        monthlyImages: "monthly images"
+      };
+      const retryAfterSeconds = Math.max(
+        0,
+        Math.ceil(usageResult.retryAfterMs / 1000)
+      );
+      const systemMessage = `You have reached the ${
+        limitNames[usageResult.limitType]
+      } limit. Please wait ${retryAfterSeconds} second${
+        retryAfterSeconds === 1 ? "" : "s"
+      } and try again.`;
+
+      console.warn("[USAGE LIMIT]", usageResult.message);
+      return new Response(
+        JSON.stringify({
+          error: usageResult.message || "Usage limits exceeded",
+          systemMessage,
+          limitType: usageResult.limitType,
+          retryAfterMs: usageResult.retryAfterMs,
+          usageSnapshot: {
+            minuteRequests: usageResult.minuteRequests,
+            hourRequests: usageResult.hourRequests,
+            monthlyRequests: usageResult.monthlyRequests,
+            monthlyMessages: usageResult.monthlyMessages,
+            monthlyImages: usageResult.monthlyImages
+          }
+        }),
+        { status: 429, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // ── 12. Build tool set ─────────────────────────────────────────────────
     let tools: ToolSet | undefined;
 
     if (webSearch && !isSimpleGreeting && !isLowComplexity) {
-      // Note: tool turns always use gpt-4o-mini (hybrid policy), so web_search
-      // is always compatible regardless of admin-selected resolvedModel.
-      const webNativeModels = ["gpt-4o", "gpt-4o-mini", "gpt-5-mini"];
-      if (!webNativeModels.includes(resolvedModel.toLowerCase())) {
-        console.log(
-          `[WEB SEARCH] Admin model "${resolvedModel}" overridden to gpt-4o-mini for tool turn`
-        );
-      }
-      tools = {
-        web_search: openaiClient.tools.webSearch({})
-      } as ToolSet;
+      tools = { web_search: openaiClient.tools.webSearch({}) } as ToolSet;
     }
 
     if (useRAG && !isSimpleGreeting && !isLowComplexity) {
@@ -709,7 +681,6 @@ export async function POST(req: Request) {
       } as ToolSet;
     }
 
-    // Perplexity structured web search tool
     if (perplexityTriggered && !isSimpleGreeting && !isLowComplexity) {
       const perplexityApiKey = process.env.PERPLEXITY_API_KEY;
       if (!perplexityApiKey) {
@@ -753,10 +724,7 @@ export async function POST(req: Request) {
                           content:
                             "You are a research assistant. Return structured search results. For each result provide: headline, outlet (source name), date (ISO format if available), url, and snippet (1-2 lines). Return up to 5 results as a JSON array."
                         },
-                        {
-                          role: "user",
-                          content: searchQuery
-                        }
+                        { role: "user", content: searchQuery }
                       ],
                       search_recency_filter: "month"
                     }),
@@ -781,7 +749,6 @@ export async function POST(req: Request) {
                 const rawContent = data?.choices?.[0]?.message?.content || "";
                 const citations: string[] = data?.citations || [];
 
-                // Attempt to parse structured results from Perplexity response
                 let results: Array<{
                   headline: string;
                   outlet: string;
@@ -791,16 +758,12 @@ export async function POST(req: Request) {
                 }> = [];
 
                 try {
-                  // Try parsing JSON from the response
                   const jsonMatch = rawContent.match(/\[\s*\{[\s\S]*?\}\s*\]/);
-                  if (jsonMatch) {
-                    results = JSON.parse(jsonMatch[0]);
-                  }
+                  if (jsonMatch) results = JSON.parse(jsonMatch[0]);
                 } catch {
-                  // If JSON parsing fails, build results from citations
+                  // fall through to citations fallback
                 }
 
-                // If no structured results, build from citations + raw content
                 if (results.length === 0 && citations.length > 0) {
                   results = citations.slice(0, 5).map((url, i) => ({
                     headline: `Source ${i + 1}`,
@@ -811,7 +774,6 @@ export async function POST(req: Request) {
                   }));
                 }
 
-                // Attach raw summary if we have it
                 const finalResults = results.slice(0, 5);
                 console.log("[PERPLEXITY] Response", {
                   resultCount: finalResults.length,
@@ -837,7 +799,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // Image generation tool (DALL-E 3)
     if (imageGenTriggered && !isSimpleGreeting && !isLowComplexity) {
       tools = {
         ...tools,
@@ -890,8 +851,6 @@ export async function POST(req: Request) {
                   `[IMAGE GEN] API error: ${response.status} ${response.statusText}`,
                   errorBody
                 );
-
-                // Check for content policy violation
                 if (response.status === 400 && errorBody.includes("safety")) {
                   return {
                     imageUrl: "",
@@ -900,7 +859,6 @@ export async function POST(req: Request) {
                       "The image request was declined due to content policy. I can help you refine the prompt or provide a safe text-based alternative."
                   };
                 }
-
                 return {
                   imageUrl: "",
                   revisedPrompt: "",
@@ -936,7 +894,7 @@ export async function POST(req: Request) {
       } as ToolSet;
     }
 
-    // 6) Build minimal system prompt (pre-stream only)
+    // ── 13. Build system prompt ────────────────────────────────────────────
     const systemPrompt = buildMinimalSystemPrompt({
       userSystemPrompt,
       basePrompt: baseSystemPrompt,
@@ -950,17 +908,13 @@ export async function POST(req: Request) {
       conversationSummary: summaryText
     });
 
-    // 7) Select model
-    let selectedModel: LanguageModel;
+    // ── 14. Select model ───────────────────────────────────────────────────
     let effectiveModel = resolvedModel;
     const isComplexTurn = !isSimpleGreeting && !isLowComplexity;
 
-    // Fast-path for greetings: avoid high-latency reasoning models for trivial turns
     if (isSimpleGreeting && resolvedModel.toLowerCase().startsWith("gpt-5")) {
       effectiveModel = "gpt-4o-mini";
     }
-
-    // Fast-path for very low complexity prompts (e.g., "what is 2+2")
     if (
       !useRAG &&
       !webSearch &&
@@ -969,85 +923,51 @@ export async function POST(req: Request) {
     ) {
       effectiveModel = "gpt-4o-mini";
     }
-
-    // Hybrid policy v3:
-    // - Preserve admin-selected model for complex non-tool turns.
-    // - Use gpt-4o-mini for tool-enabled turns to reduce hidden reasoning token burn
-    //   and improve reliability of final visible text output in UI.
+    // Hybrid policy: use gpt-4o-mini for tool turns to reduce hidden reasoning
+    // token burn and improve reliability of final visible text output in UI.
     if (hasToolsEnabled) {
       effectiveModel = "gpt-4o-mini";
     }
 
-    if (
+    const selectedModel: LanguageModel =
       (effectiveModel.toLowerCase() ?? "").includes("gpt") ||
       provider === "openai"
-    ) {
-      selectedModel = openaiClient(effectiveModel);
-    } else {
-      selectedModel = google(effectiveModel);
-    }
+        ? openaiClient(effectiveModel)
+        : google(effectiveModel);
 
+    // ── 15. Prepare model messages ─────────────────────────────────────────
     const preStreamMessages = isBeginTrigger
       ? [
           {
             role: "user",
-            parts: [
-              {
-                type: "text",
-                text: BEGIN_INTERNAL_PROMPT
-              }
-            ]
+            parts: [{ type: "text", text: BEGIN_INTERNAL_PROMPT }]
           }
         ]
       : normalizedMessages;
 
     const messagesForModel = preStreamMessages.map((message: any) => {
-      if (Array.isArray(message?.parts)) {
+      if (Array.isArray(message?.parts)) return message;
+      if (!message || message.content === undefined || message.content === null)
         return message;
-      }
-
-      if (
-        !message ||
-        message.content === undefined ||
-        message.content === null
-      ) {
-        return message;
-      }
-
       if (typeof message.content === "string") {
-        return {
-          ...message,
-          parts: [{ type: "text", text: message.content }]
-        };
+        return { ...message, parts: [{ type: "text", text: message.content }] };
       }
-
       if (Array.isArray(message.content)) {
-        const normalizedParts = message.content
+        const parts = message.content
           .map((part: any) => {
-            if (typeof part === "string") {
-              return { type: "text", text: part };
-            }
-
-            if (part?.type === "text" && typeof part?.text === "string") {
+            if (typeof part === "string") return { type: "text", text: part };
+            if (part?.type === "text" && typeof part?.text === "string")
               return { type: "text", text: part.text };
-            }
-
             return null;
           })
           .filter(Boolean);
-
-        if (normalizedParts.length > 0) {
-          return {
-            ...message,
-            parts: normalizedParts
-          };
-        }
+        if (parts.length > 0) return { ...message, parts };
       }
-
       return message;
     });
 
     const modelMessages = await convertToModelMessages(messagesForModel);
+
     const preStreamDoneAt = Date.now();
     console.log("[PERF] pre-stream", {
       t_pre_stream_ms: preStreamDoneAt - requestStartedAt,
@@ -1067,22 +987,24 @@ export async function POST(req: Request) {
       preservedAdminModel: effectiveModel === resolvedModel
     });
 
+    const maxOutputTokens =
+      isSimpleGreeting || isLowComplexity
+        ? 120
+        : hasToolsEnabled
+          ? TOOL_TURN_MAX_OUTPUT_TOKENS
+          : isComplexTurn
+            ? COMPLEX_TURN_MAX_OUTPUT_TOKENS
+            : NORMAL_TURN_MAX_OUTPUT_TOKENS;
+
     console.log("[MAIN STREAM] I/O config", {
       model: effectiveModel,
       systemPromptPreview: systemPrompt.slice(0, 200),
       userMessagePreview: latestUserText.slice(0, 200),
       toolNames: tools ? Object.keys(tools) : [],
-      maxOutputTokens:
-        isSimpleGreeting || isLowComplexity
-          ? 120
-          : hasToolsEnabled
-            ? TOOL_TURN_MAX_OUTPUT_TOKENS
-            : isComplexTurn
-              ? COMPLEX_TURN_MAX_OUTPUT_TOKENS
-              : NORMAL_TURN_MAX_OUTPUT_TOKENS
+      maxOutputTokens
     });
 
-    // streaming starts here
+    // ── 16. Stream ─────────────────────────────────────────────────────────
     let firstChunkAt: number | null = null;
     const streamStartedAt = Date.now();
     console.log("[PERF] stream-start", {
@@ -1098,21 +1020,10 @@ export async function POST(req: Request) {
       stopWhen: hasToolsEnabled ? stepCountIs(3) : stepCountIs(1),
       providerOptions:
         effectiveModel.toLowerCase().startsWith("gpt-5") && !tools
-          ? {
-              openai: {
-                reasoningEffort: "minimal"
-              }
-            }
+          ? { openai: { reasoningEffort: "minimal" } }
           : undefined,
       maxRetries: 2,
-      maxOutputTokens:
-        isSimpleGreeting || isLowComplexity
-          ? 120
-          : hasToolsEnabled
-            ? TOOL_TURN_MAX_OUTPUT_TOKENS
-            : isComplexTurn
-              ? COMPLEX_TURN_MAX_OUTPUT_TOKENS
-              : NORMAL_TURN_MAX_OUTPUT_TOKENS,
+      maxOutputTokens,
       onChunk: () => {
         if (firstChunkAt !== null) return;
         firstChunkAt = Date.now();
@@ -1122,8 +1033,6 @@ export async function POST(req: Request) {
         });
       },
       onFinish: (finishEvent: any) => {
-        // ========================= POST-STREAM (non-blocking) =========================
-        // This callback runs after generation and should never block first token.
         const finishReason = finishEvent?.finishReason;
         const responseText = finishEvent?.text ?? "";
         const usage = finishEvent?.usage;
@@ -1144,25 +1053,21 @@ export async function POST(req: Request) {
           t_first_chunk_ms:
             firstChunkAt !== null ? firstChunkAt - requestStartedAt : null
         });
-
-        // Optional assistant persistence can be added here once response text shape
-        // is standardized across providers in this project.
       }
     });
 
-    // post-stream tasks
-    // Non-essential operations run detached and must never block first token.
+    // ── 17. Post-stream background tasks ──────────────────────────────────
+    // chatResult is reused here — no second Convex query needed.
     void (async () => {
       try {
         const resolvedChatId = chatId as any;
 
-        // Full persistence handled after stream starts
         const persistenceTask = resolvedChatId
           ? (async () => {
-              const persistTasks = preStreamMessages
-                .filter((message: any) => message?.role === "user")
-                .map((message: any) => {
-                  const content = extractMessageText(message);
+              const tasks = preStreamMessages
+                .filter((m: any) => m?.role === "user")
+                .map((m: any) => {
+                  const content = extractMessageText(m);
                   if (!content) return Promise.resolve();
                   if (content.trim() === "__begin__") return Promise.resolve();
                   if (content.trim() === BEGIN_INTERNAL_PROMPT)
@@ -1174,24 +1079,13 @@ export async function POST(req: Request) {
                     gptId
                   });
                 });
-
-              await Promise.allSettled(persistTasks);
+              await Promise.allSettled(tasks);
             })()
           : Promise.resolve();
 
-        // Background title generation (non-blocking; no auth mutation here)
-        const existingChat =
-          resolvedChatId && userId
-            ? await convex.query(api.chats.getChat, {
-                id: resolvedChatId,
-                userId
-              })
-            : null;
-
+        // Reuse chatResult fetched earlier — avoids a second getChat query
         const existingTitle =
-          typeof existingChat?.title === "string"
-            ? existingChat.title.trim()
-            : "";
+          typeof chatResult?.title === "string" ? chatResult.title.trim() : "";
 
         const hasPlaceholderTitle =
           /^new(?:\s.+)?\schat$/i.test(existingTitle) ||
@@ -1215,10 +1109,10 @@ export async function POST(req: Request) {
           looksLikeTruncatedInitialTitle;
 
         const nonBeginUserMessageCount = (messages || []).filter(
-          (message: any) =>
-            message?.role === "user" &&
-            extractMessageText(message).trim() !== "__begin__" &&
-            extractMessageText(message).trim() !== BEGIN_INTERNAL_PROMPT
+          (m: any) =>
+            m?.role === "user" &&
+            extractMessageText(m).trim() !== "__begin__" &&
+            extractMessageText(m).trim() !== BEGIN_INTERNAL_PROMPT
         ).length;
 
         const titleTask =
@@ -1245,17 +1139,11 @@ export async function POST(req: Request) {
           ? titleTask.then(async (generatedTitle) => {
               const nextTitle =
                 typeof generatedTitle === "string" ? generatedTitle.trim() : "";
-              if (!nextTitle) return;
-
-              if (!convexToken) return;
-
+              if (!nextTitle || !convexToken) return;
               const authedConvex = new ConvexHttpClient(
                 process.env.NEXT_PUBLIC_CONVEX_URL!,
-                {
-                  auth: convexToken
-                }
+                { auth: convexToken }
               );
-
               await authedConvex.mutation(api.chats.updateChatTitle, {
                 id: resolvedChatId,
                 title: nextTitle
@@ -1263,13 +1151,10 @@ export async function POST(req: Request) {
             })
           : Promise.resolve();
 
-        // Tool setup warm-up / RAG prep after stream starts
         const toolWarmupTask =
           webSearch || useRAG
             ? Promise.resolve().then(() => {
-                if (webSearch) {
-                  openaiClient.tools.webSearch({});
-                }
+                if (webSearch) openaiClient.tools.webSearch({});
                 if (useRAG && ragVectorStoreIds.length > 0) {
                   openaiClient.tools.fileSearch({
                     vectorStoreIds: ragVectorStoreIds,
@@ -1279,7 +1164,6 @@ export async function POST(req: Request) {
               })
             : Promise.resolve();
 
-        // Auto-summarize older conversation after stream starts (never blocks first token)
         const summarizeTask =
           resolvedChatId && messages.length >= SUMMARY_TURN_THRESHOLD
             ? Promise.resolve().then(() => {
@@ -1295,7 +1179,6 @@ export async function POST(req: Request) {
                     maxTotalChars: 1200
                   }
                 );
-
                 if (summary) {
                   conversationSummaryCache.set(resolvedChatId, {
                     summary,
@@ -1314,7 +1197,6 @@ export async function POST(req: Request) {
           summarizeTask
         ]);
 
-        // Analytics/logging post-stream
         console.log("[POST-STREAM TASKS COMPLETE]", {
           gptId: gptId || "None",
           chatId: !!resolvedChatId,
@@ -1334,16 +1216,12 @@ export async function POST(req: Request) {
     return result.toUIMessageStreamResponse();
   } catch (error) {
     console.error("[CHAT ERROR]", error);
-
     return new Response(
       JSON.stringify({
         error: error instanceof Error ? error.message : "Chat failed",
         details: error instanceof Error ? error.stack : undefined
       }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      }
+      { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
 }

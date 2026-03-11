@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as aiUsage from "../aiUsage.js";
 import type * as chats from "../chats.js";
 import type * as gptAccess from "../gptAccess.js";
 import type * as gpts from "../gpts.js";
@@ -29,6 +30,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  aiUsage: typeof aiUsage;
   chats: typeof chats;
   gptAccess: typeof gptAccess;
   gpts: typeof gpts;
