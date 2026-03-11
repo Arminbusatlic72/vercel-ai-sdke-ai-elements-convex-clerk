@@ -1,5 +1,10 @@
 import { v } from "convex/values";
-import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import {
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx
+} from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
 type WindowType = "minute" | "hour" | "monthly";
