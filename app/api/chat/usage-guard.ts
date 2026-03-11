@@ -1,7 +1,7 @@
 export const BEGIN_INTERNAL_PROMPT =
   "Start this conversation with one concise, friendly opening message and a brief note about how you can help.";
 
-export const REQUESTS_PER_MINUTE_LIMIT = 5;
+export const REQUESTS_PER_MINUTE_LIMIT = 10;
 export const REQUESTS_PER_HOUR_LIMIT = 100;
 export const MONTHLY_MESSAGE_LIMIT = 2_500;
 export const MONTHLY_IMAGE_LIMIT = 50;

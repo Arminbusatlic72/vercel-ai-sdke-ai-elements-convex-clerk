@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, type MutationCtx } from "./_generated/server";
+import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
 type WindowType = "minute" | "hour" | "monthly";
@@ -48,7 +48,7 @@ export function getUsageWindowStarts(now = Date.now()) {
 }
 
 const fetchWindowRecord = async (
-  ctx: MutationCtx,
+  ctx: MutationCtx | QueryCtx,
   userId: string,
   windowType: WindowType,
   windowStart: number
