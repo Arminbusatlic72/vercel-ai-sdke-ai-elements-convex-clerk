@@ -14,8 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Culture Mapping App",
-  description: "Generate and explore culture maps with AI assistance."
+  title: "StoryEngine Sandbox",
+  description:
+    "Generative AI assistants that organize, surface, and structure signals so that sensemaking can occur."
 };
 
 export default function RootLayout({
