@@ -27,7 +27,7 @@ const PACKAGE_CATALOG = [
     description: ""
   },
   {
-    name: "Crisis Simulator RV",
+    name: "StoryEngine Crisis Simulator",
     key: "standalone",
     tier: "free",
     stripePriceId: process.env.STRIPE_PRICE_CRISIS_SIMULATOR_RV!,
@@ -340,8 +340,8 @@ const PACKAGE_CATALOG = [
     description: ""
   },
   {
-    name: "Workshop Primer",
-    key: "workshop-primer",
+    name: "Cultural Intelligence Primer",
+    key: "cultural-intelligence-primer",
     tier: "free",
     stripePriceId: process.env.STRIPE_PRICE_WORKSHOP!,
     stripeProductId: process.env.STRIPE_PRODUCT_WORKSHOP!,
